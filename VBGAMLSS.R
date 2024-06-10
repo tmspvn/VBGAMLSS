@@ -18,8 +18,8 @@ library(progressr)
 options(progressr.enable=TRUE)
 
 
-vbgamlss <- function(image, mask, multi.tissue=NULL, 
-                     g.formula, train.data, g.family=NO,
+vbgamlss <- function(image, mask, g.formula, train.data, g.family=NO, 
+                     segmentation=NULL,
                      num_cores=NULL, ...) {
   
   if (missing(image)) { stop("image is missing")}
@@ -28,20 +28,11 @@ vbgamlss <- function(image, mask, multi.tissue=NULL,
   if (missing(train.data)) { stop("subjData is missing")}
   
   if (class(g.formula) != "character") { stop("g.formula class must be character")}
-  
-  if (class(image) == "character") {image <- oro.nifti::readNIfTI(fname=image)} 
-  
-  if (class(mask) == "character") {mask <- oro.nifti::readNIfTI(fname=mask)}
-  
-  if (class(multi.tissue) == "character") {multi.tissue <- oro.nifti::readNIfTI(fname=multi.tissue)} 
-  
   if (is.null(num_cores)) {num_cores <- availableCores()}
   
   # 4d to 2D and set a global variable: subjects (4th dim) x voxels (columns)
-  voxeldata <- ts2matrix(image, mask)
-  if (!is.null(multi.tissue)){multi.tissue <- ts2matrix(multi.tissue, mask)}
-  rm(image)
-  rm(mask)
+  voxeldata <- images2matrix(image, mask)
+  if (!is.null(segmentation)){segmentation <- images2matrix(segmentation, mask)}
   gc()
 
   # Coerce update on left hand g.formula for parallel fitting
@@ -51,9 +42,9 @@ vbgamlss <- function(image, mask, multi.tissue=NULL,
   plan(cluster, workers = num_cores)
   handlers(global = TRUE)
   handlers("pbmcapply")
-  p <- progressor(ncol(voxeldata))
+  p <- with_progress(progressor(ncol(voxeldata)))
   future.opt <- list('gamlss2')
-  # foreach call --> MAY NEED CHUNKING WITH MORE VOXEL DATA 
+  # foreach call
   models <- foreach(vxlcol = seq_along(voxeldata),
                     .options.future = future.opt,
                     .combine=c
@@ -62,8 +53,8 @@ vbgamlss <- function(image, mask, multi.tissue=NULL,
                                vxl_train_data <- train.data
                                vxl_train_data$Y <- voxeldata[,vxlcol]
                                # if multi tissue add
-                               if (!is.null(multi.tissue)){
-                                 vxl_train_data$tissue <- multi.tissue[,vxlcol]}
+                               if (!is.null(segmentation)){
+                                 vxl_train_data$tissue <- segmentation[,vxlcol]}
                                # gamlss
                                g <- gamlss2::gamlss2(formula=g.fo,
                                                      data=vxl_train_data,
@@ -83,9 +74,11 @@ vbgamlss <- function(image, mask, multi.tissue=NULL,
 
 
 
-vbgamlss_chunks <- function(image, mask, multi.tissue=NULL, 
-                     g.formula, train.data, g.family=NO,
-                     num_cores=NULL, ...) {
+vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
+                            segmentation=NULL, 
+                            num_cores=NULL, 
+                            chunk_max_mb=256,
+                            ...) {
   
   if (missing(image)) { stop("image is missing")}
   if (missing(mask)) { stop("mask is missing")}
@@ -93,20 +86,11 @@ vbgamlss_chunks <- function(image, mask, multi.tissue=NULL,
   if (missing(train.data)) { stop("subjData is missing")}
   
   if (class(g.formula) != "character") { stop("g.formula class must be character")}
-  
-  if (class(image) == "character") {image <- oro.nifti::readNIfTI(fname=image)} 
-  
-  if (class(mask) == "character") {mask <- oro.nifti::readNIfTI(fname=mask)}
-  
-  if (class(multi.tissue) == "character") {multi.tissue <- oro.nifti::readNIfTI(fname=multi.tissue)} 
-  
   if (is.null(num_cores)) {num_cores <- availableCores()}
   
   # 4d to 2D and set a global variable: subjects (4th dim) x voxels (columns)
-  voxeldata <- ts2matrix(image, mask)
-  if (!is.null(multi.tissue)){multi.tissue <- ts2matrix(multi.tissue, mask)}
-  rm(image)
-  rm(mask)
+  voxeldata <- images2matrix(image, mask)
+  if (!is.null(segmentation)){segmentation <- images2matrix(segmentation, mask)}
   gc()
   
   # Coerce update on left hand g.formula for parallel fitting
@@ -118,18 +102,18 @@ vbgamlss_chunks <- function(image, mask, multi.tissue=NULL,
   handlers("pbmcapply")
   future.opt <- list('gamlss2')
   # compute chunk size
-  Nchunks <- estimate_nchunks(voxeldata)
+  Nchunks <- estimate_nchunks(voxeldata, chunk_max_Mb=chunk_max_mb)
   # parallel call
   chunked = as.list(isplitIndices(ncol(voxeldata), chunks=Nchunks))
   i = 1
   models <- list()
   for (ichunk in chunked){
-      print(paste0("Chunk: ",i,"/", Nchunks))
+      cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
       i<- i+1
       voxeldata_chunked <- voxeldata[,ichunk]
       p <- progressor(ncol(voxeldata_chunked))
       # fit vbgamlss 
-      models <- foreach(vxlcol = seq_along(voxeldata_chunked),
+      submodels <- foreach(vxlcol = seq_along(voxeldata_chunked),
                         .options.future = future.opt,
                         .combine=c
       ) %dofuture% {
@@ -137,8 +121,8 @@ vbgamlss_chunks <- function(image, mask, multi.tissue=NULL,
         vxl_train_data <- train.data
         vxl_train_data$Y <- voxeldata_chunked[,vxlcol]
         # if multi tissue add
-        if (!is.null(multi.tissue)){
-          vxl_train_data$tissue <- multi.tissue[,vxlcol]}
+        if (!is.null(segmentation)){
+          vxl_train_data$tissue <- segmentation[,vxlcol]}
         # gamlss
         g <- gamlss2::gamlss2(formula=g.fo,
                               data=vxl_train_data,
@@ -206,11 +190,11 @@ load_model <- function(file_prefix, num_cores = NULL) {
   # check if missing voxel models
   expected_numbers <- seq(1, length(integer_suffixes))
   missing_numbers <- setdiff(expected_numbers, integer_suffixes)
-  print(paste0('VBGAMLSS model directory:', directory))
+  cat(paste0('VBGAMLSS model directory:', directory))
   if (length(missing_numbers) == 0) {
-    print(paste0('Found models for ', length(integer_suffixes), ' voxels.'))
+    cat(paste0('Found models for ', length(integer_suffixes), ' voxels.'))
   } else {
-    print(paste0("Some models are missing. can't find model[s] for voxel: ", missing_numbers))
+    cat(paste0("Some models are missing. can't find model[s] for voxel: ", missing_numbers))
   }
   integer_suffixes <- as.list(sort(integer_suffixes))
   # run load
@@ -227,6 +211,52 @@ load_model <- function(file_prefix, num_cores = NULL) {
   gc()
   return(structure(models, class = "vbgamlss"))
 }
+
+
+load_model_chunks <- function(file_prefix, num_cores = NULL) {
+  if (is.null(num_cores)) {num_cores <- availableCores()}
+  # parse path:
+  parts <- unlist(strsplit(file_prefix, "/"))
+  directory <- paste(parts[-length(parts)], collapse = "/")
+  prefix <- gsub("\\'", "", parts[length(parts)])
+  # List files with the specified prefix
+  file_paths <- list.files(directory, pattern = paste0("^", prefix))
+  # Extract integer suffix from file names
+  integer_suffixes <- sapply(file_paths, function(s) {as.numeric(gsub("^.*\\.(\\d+)$", "\\1", s))})
+  
+  # check if missing voxel models
+  expected_numbers <- seq(1, length(integer_suffixes))
+  missing_numbers <- setdiff(expected_numbers, integer_suffixes)
+  cat(paste0('VBGAMLSS model directory:', directory), fill=T)
+  
+  if (length(missing_numbers) == 0) {
+    cat(paste0('Found models for ', length(integer_suffixes), ' voxels.'), fill=T)
+  } else {
+    cat(paste0("Some models are missing. Can't find model[s] for voxel: ", missing_numbers), fill=T)
+  }
+  integer_suffixes <- as.list(sort(integer_suffixes))
+  # parallel call
+  Nchunks = estimate_nchunks(paste0(file_prefix, ".", 1), from_files=TRUE)
+  chunked = as.list(isplitIndices(length(integer_suffixes), chunks=Nchunks))
+  models = c()
+  i = 1
+  for (ichunk in chunked){
+    cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
+    i<- i+1
+    # compute z-scores
+    integer_suffixes_chunked <- integer_suffixes[ichunk]
+    p <- progressor(length(integer_suffixes_chunked))
+    loaded <- foreach(i = integer_suffixes_chunked) %dofuture% {
+      rds <- readRDS(paste0(file_prefix, ".", i))
+      p()
+      rds
+    }
+    models <- c(models, loaded)
+  }
+  gc()
+  return(structure(models, class = "vbgamlss"))
+}
+
 
 
 #' Predict method for vbgamlss objects
@@ -252,7 +282,7 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ...){
   chunked = as.list(isplitVector(object, chunks=Nchunks))
   i = 1
   for (chunk in chunked){
-      print(paste0("Chunk: ",i,"/", Nchunks))
+      cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
       i<- i+1
       subpr <- pbmclapply(chunk, 
                          function(vxlgamlss) {
@@ -286,17 +316,10 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ...){
 zscore.vbgamlss <- function(predictions, yimage, ymask, num_cores=NULL){
   if (missing(predictions)) { stop("vbgamlss.predictions is missing")}
   if (missing(yimage)) { stop("vbgamlss.predictions is missing")}
-  
-  if (class(yimage) == "character") {yimage <- oro.nifti::readNIfTI(fname=yimage)} 
-  
-  if (class(ymask) == "character") {ymask <- oro.nifti::readNIfTI(fname=ymask)}
-
   if (is.null(num_cores)) {num_cores <- availableCores()}
   
   # 4d to 2D and set a global variable: subjects (4th dim) x voxels (columns)
-  yvoxeldata <- ts2matrix(yimage, ymask)
-  rm(yimage)
-  rm(ymask)
+  yvoxeldata <- images2matrix(yimage, ymask)
   gc()
   # parallel function
   do.zscore <- function(obj) {
@@ -326,7 +349,7 @@ zscore.vbgamlss <- function(predictions, yimage, ymask, num_cores=NULL){
   chunked = as.list(isplitIndices(ncol(yvoxeldata), chunks=Nchunks))
   i = 1
   for (ichunk in chunked){
-    print(paste0("Chunk: ",i,"/", Nchunks))
+    cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
     i<- i+1
     # chunk yvoxeldata and predictions
     iterable_chunk <- mapply(list, 
@@ -350,35 +373,80 @@ zscore.vbgamlss <- function(predictions, yimage, ymask, num_cores=NULL){
 #' @return Estimated number of chunks with max 256MB per job.
 #' @examples estimate_nchunks(data)
 #' @export
-estimate_nchunks <- function(object) {
-                          # compute chunk size of max 256 mb per job
-                          memory_size_mb <- object.size(object) / (1024^2)
-                          Nchunks <- ceiling(memory_size_mb / 256) 
-                          return(Nchunks)
-                          }
+estimate_nchunks <- function(object, from_files=F, chunk_max_Mb=256) {
+  # compute chunk size of max 256 mb per job
+  if (! from_files){
+      memory_size_mb <- object.size(object) / (1024^2)
+      Nchunks <- ceiling(memory_size_mb / chunk_max_Mb) 
+    } else {
+      memory_size_mb <- file.info(object)$size / (1024^2)
+      Nchunks <- ceiling(memory_size_mb / chunk_max_Mb) 
+    }
+  return(Nchunks)
+  }
 
-# to be finished:
-load_input <- function(image_list, mask){
+
+images2matrix <- function(image_list, mask) {
+  # imageList is a list containing images.  Mask is a mask image Returns matrix of
+  # dimension (numImages, numVoxelsInMask)
   if (missing(image_list)) { stop("image_list is missing")}
   if (missing(mask)) { stop("mask is missing")}
-  
-  if (class(image_list) == "list") {yimage <- oro.nifti::readNIfTI(fname=yimage)} 
-  
-  if (class(mask) == "character") {ymask <- oro.nifti::readNIfTI(fname=ymask)}
-  
-  if (is.null(num_cores)) {num_cores <- availableCores()}
-  
+  # load mask
+  mask_ <- antsImageRead(mask, 3)
+  mask_arr <- as.array(mask_) > 0
+  numVoxels <- length(which(mask_arr))
+  # check if list of images of image
+  if (class(image_list) == "list"){
+    cat('Converting from list of images paths', fill=T)
+    numImages <- length(image_list)
+    dataMatrix <- matrix(nrow = numImages, ncol = numVoxels)
+    for (i in 1:length(imageList)) 
+      {dataMatrix[i, ] <- as.numeric(imageList[[i]], mask = mask_arr)}
+    
+  } else {
+    if (class(image_list) != "character") { 
+      stop("image_list is not a list of nifties or a path to a 4D image")}
+    cat('Converting from 4D image path', fill=T)
+    large_image <- antsImageRead(image_list, 4)
+    numImages <- dim(large_image)[4]
+    dataMatrix <- matrix(nrow = numImages, ncol = numVoxels)
+    for (i in 1:numImages) 
+      {dataMatrix[i, ] <- as.numeric(as.antsImage(drop(large_image[,,,i])), mask = mask_arr)}
+    
+  }
+  return(as.data.frame(dataMatrix))
+}
+
+# to be finished:
+matrix2image <- function(matrix, mask){
+  if (missing(matix)) { stop("matrix is missing")}
+  if (missing(mask)) { stop("mask is missing")}
+  return()
 }
 
 
+map_model_coefficients <- function(fittedobj, mask, filename){
+  if (class(fittedobj) != "vbgamlss") { stop("fittedobj must be of class vbgamlss.")}
+  warning('Coefficients from special model terms cannot be map (e.g. pb(), s())')
+  nvox <- length(fittedobj)
+  first_mod_coefs <- unlist(fittedobj[[1]]$coefficients)
+  name_coefs <- names(first_mod_coefs)
+  ncoefs <- length(first_mod_coefs)
+  coefs_mat <- matrix(nrow = ncoefs, ncol = nvox)
+  for (i in 1:nvox) {
+    coefs_mat[,i] <- unlist(fittedobj[[i]]$coefficients)
+  }
+  # convert mat to maps
+  coef_maps_images <- matrixToImages(coefs_mat, antsImageRead(mask, 3))
+  # save files
+  for (i in length(coef_maps_images)) {
+    fname <- paste0(filename, '.', name_coefs[i],'.nii.gz')
+    antsImageWrite(coef_maps_images[[i]], fname)
+  }
+}
 
 
-
-
-
-
-
-
-
-
-
+map_model_predictions <- function(parameters, filename){
+  img <- makeImage( mask , parameters)
+  returnval<-antsImageWrite( img, filename)
+}

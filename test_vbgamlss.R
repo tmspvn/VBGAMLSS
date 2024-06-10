@@ -4,9 +4,10 @@ source('~/PycharmProjects/NormativeModellingPsychosis/gamlss/VBGAMLSS/VBGAMLSS.R
 image <- '/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/funneled.nii.gz'
 mask <- '/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/vol.0_mask.nii.gz'
 set.seed(1)
-covs <- data.frame(x = runif(258), x1 = runif(258)*runif(258), x2 = runif(258))
-covs2 <- data.frame(x = runif(258), x1 = runif(258)*runif(258), x2 = runif(258))
-fm1 <- "~ x | x1"
+nsubj <- 258
+covs <- data.frame(x = rnorm(nsubj), x1 = rnorm(nsubj)*runif(nsubj), x2 = rnorm(nsubj))
+covs2 <- data.frame(x = rnorm(nsubj), x1 = rnorm(nsubj)*rnorm(nsubj), x2 = rnorm(nsubj))
+fm1 <- "~ x + x1 | x + x2 "
 
 models <- vbgamlss_chunks(image=image, 
                    mask=mask, 
@@ -14,10 +15,12 @@ models <- vbgamlss_chunks(image=image,
                    g.family=NO,
                    train.data=covs)
 save_model(models, '/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/vbgamlss.model/vbgamlss')
-models_load <- load_model('/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/vbgamlss.model/vbgamlss')
-predictions <- predict.vbgamlss(models, newdata = covs2)
+models_load <- load_model_chunks('/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/vbgamlss.model/vbgamlss')
+predictions <- predict.vbgamlss(models_load, newdata = covs2)
 zscores <- zscore.vbgamlss(predictions, image, mask)
 
+# not saving properly because of the name()
+map_model_coefficients(models, mask, filename='/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/pmap')
 
 
 # test antsr
@@ -50,4 +53,44 @@ zscores <- zscore.vbgamlss(predictions, image, mask)
 # g3$family = family_
 # g3$family = gamlss2:::complete_family(BCT)
 # predict(g3)
+
+
+
+df <- data.frame(read.csv(file = '~/PycharmProjects/NormativeModellingPsychosis/datasets/normod_df.csv'))
+df$sex <- as.factor(df$sex)
+df$scanner <- as.factor(df$scanner)
+df$group <- as.factor(df$group)
+
+f <- 
+
+## Estimate model.
+b <- gamlss2(volume ~ pb(ageY) | sex | group, 
+             data = df, 
+             family = SHASH)
+
+## Model summary.
+summary(b)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
