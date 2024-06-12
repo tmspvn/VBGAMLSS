@@ -18,6 +18,8 @@ library(progressr)
 options(progressr.enable=TRUE)
 
 
+################################  Core  ########################################
+
 vbgamlss <- function(image, mask, g.formula, train.data, g.family=NO, 
                      segmentation=NULL,
                      num_cores=NULL, ...) {
@@ -43,7 +45,7 @@ vbgamlss <- function(image, mask, g.formula, train.data, g.family=NO,
   handlers(global = TRUE)
   handlers("pbmcapply")
   p <- with_progress(progressor(ncol(voxeldata)))
-  future.opt <- list('gamlss2')
+  future.opt <- list(packages=c('gamlss2'))
   # foreach call
   models <- foreach(vxlcol = seq_along(voxeldata),
                     .options.future = future.opt,
@@ -73,11 +75,10 @@ vbgamlss <- function(image, mask, g.formula, train.data, g.family=NO,
 }
 
 
-
 vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
                             segmentation=NULL, 
                             num_cores=NULL, 
-                            chunk_max_mb=256,
+                            chunk_max_mb=64,
                             ...) {
   
   if (missing(image)) { stop("image is missing")}
@@ -97,10 +98,10 @@ vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
   g.fo <- update.formula(g.formula, 'Y ~ .')
   
   # parallel settings
-  plan(cluster, workers = num_cores)
+  plan(cluster, workers = num_cores, rscript_libs = .libPaths())
   handlers(global = TRUE)
   handlers("pbmcapply")
-  future.opt <- list('gamlss2')
+  future.opt <- list(packages=c('gamlss2'))
   # compute chunk size
   Nchunks <- estimate_nchunks(voxeldata, chunk_max_Mb=chunk_max_mb)
   # parallel call
@@ -131,7 +132,7 @@ vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
                               trace=FALSE,
                               ...)
         g$control <- NULL
-        g$family <- g$family[1] # reset via gamlss2:::complete_family()
+        g$family <- g$family[1] # re-set via gamlss2:::complete_family()
         g$vxl <- vxlcol
         p() # update progressbar
         list(g)
@@ -141,7 +142,6 @@ vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
   gc()
   return(structure(models, class = "vbgamlss"))
 }
-
 
 
 save_model <- function(model_list, file_prefix, num_cores = NULL) {
@@ -258,7 +258,6 @@ load_model_chunks <- function(file_prefix, num_cores = NULL) {
 }
 
 
-
 #' Predict method for vbgamlss objects
 #'
 #' @param object vbgamlss object to make predictions from.
@@ -367,6 +366,9 @@ zscore.vbgamlss <- function(predictions, yimage, ymask, num_cores=NULL){
 }
 
 
+
+################################  Utilities  ###################################
+
 #' Estimate number of chunks based on object size
 #'
 #' @param object R object for chunk size estimation.
@@ -417,7 +419,7 @@ images2matrix <- function(image_list, mask) {
   return(as.data.frame(dataMatrix))
 }
 
-# to be finished:
+
 matrix2image <- function(matrix, mask){
   if (missing(matix)) { stop("matrix is missing")}
   if (missing(mask)) { stop("mask is missing")}
@@ -425,9 +427,9 @@ matrix2image <- function(matrix, mask){
 }
 
 
-map_model_coefficients <- function(fittedobj, mask, filename){
+map_model_coefficients <- function(fittedobj, mask, filename, return_files=FALSE){
   if (class(fittedobj) != "vbgamlss") { stop("fittedobj must be of class vbgamlss.")}
-  warning('Coefficients from special model terms cannot be map (e.g. pb(), s())')
+  message('Warning, specific coefficients from special model terms cannot be map (e.g. pb(), s())')
   nvox <- length(fittedobj)
   first_mod_coefs <- unlist(fittedobj[[1]]$coefficients)
   name_coefs <- names(first_mod_coefs)
@@ -439,14 +441,150 @@ map_model_coefficients <- function(fittedobj, mask, filename){
   # convert mat to maps
   coef_maps_images <- matrixToImages(coefs_mat, antsImageRead(mask, 3))
   # save files
-  for (i in length(coef_maps_images)) {
-    fname <- paste0(filename, '.', name_coefs[i],'.nii.gz')
+  fnames <- c()
+  for (i in 1:length(coef_maps_images)) {
+    # parse coef name
+    parts <- strsplit(name_coefs[i], "\\.")[[1]]
+    if (parts[2] != '(Intercept)') {parts[2] = paste0('(', parts[2], ')')}
+    fname <- paste0(filename, '_par-', toupper(parts[1]), '_coef-', parts[2],'.nii.gz')
+    # save
     antsImageWrite(coef_maps_images[[i]], fname)
+    fnames[i] <- fname
   }
+  if (return_files) {return(fnames)}
 }
 
 
-map_model_predictions <- function(parameters, filename){
-  img <- makeImage( mask , parameters)
-  returnval<-antsImageWrite( img, filename)
+map_model_predictions <- function(obj, mask, filename, index=NULL, 
+                                  return_files=FALSE){
+  if (class(obj) != "vbgamlss.predictions") { stop("obj must be of class vbgamlss.predictions")}
+  if (! is.null(index)) {cat(paste0('Mapping predictions index: ', list(index)), fill=T)}
+  # prepare usefull info
+  nvox <- length(obj)
+  first_pred <- obj[[1]]
+  family <- first_pred$family
+  name_param <- names(first_pred)[! names(first_pred) %in% c('family', 'vxl')]
+  nparam <- length(name_param)
+  # save a subset?
+  if (is.null(index)) {
+    nsubj <- length(first_pred[[name_param[1]]])
+    subj = 1:nsubj # all
+  } else {
+    subj = index # subset
+    nsubj = length(subj)
+  }
+  # process
+  for (pname in name_param) {
+    param_mat <- matrix(nrow=nsubj, ncol=nvox)
+    for (ic in 1:nvox) {
+      # voxel   #parameter  #subjects
+      param_mat[, ic] <- obj[[ic]][[pname]][subj]
+    }
+    # convert mat to maps & save per subj
+    param_maps_images <- matrixToImages(param_mat, antsImageRead(mask, 3))
+    # save files
+    fnames <- c()
+    for (ip in 1:length(param_maps_images)) {
+      fname <- paste0(filename, 
+                      '_subj-', index[ip],
+                      '_fam-', family,
+                      '_par-' , toupper(pname),
+                      '.nii.gz')
+      antsImageWrite(param_maps_images[[ip]], fname)
+      fnames[ip] <- fname
+    }
+  }
+  if (return_files) {return(fnames)}
+}
+
+
+map_zscores <- function(zscores, mask, filename, index=NULL, 
+                                  return_files=FALSE){
+  if (class(zscores) != "vbgamlss.zscores") { stop("zscores must be of class vbgamlss.zscores")}
+  if (! is.null(index)) {cat(paste0('Mapping predictions index: ', list(index)), fill=T)}
+  
+  # prepare usefull info
+  nvox <- length(zscores)
+  first_vxl <- zscores[[1]]
+  # save a subset?
+  if (is.null(index)) {
+    nsubj <- length(first_vxl)
+    subj = 1:nsubj # all
+  } else {
+    subj = index # subset
+    nsubj = length(subj)
+  }
+  # process
+  z_mat <- matrix(nrow=nsubj, ncol=nvox)
+  for (ic in 1:nvox) {
+    # voxel #subjects
+    z_mat[, ic] <- zscores[[ic]][subj]
+  }
+  # convert mat to maps & save per subj
+  z_maps_images <- matrixToImages(z_mat, antsImageRead(mask, 3))
+  # save files
+  fnames <- c()
+  for (ip in 1:length(z_maps_images)) {
+    fname <- paste0(filename, 
+                    '_subj-', index[ip],
+                    '.zscore.nii.gz')
+    antsImageWrite(z_maps_images[[ip]], fname)
+    fnames[ip] <- fname
+  }
+  if (return_files) {return(fnames)}
+}
+
+
+################################  Development ##################################
+zscore_image.vbgamlss <- function(predictions, yimage, ymask, num_cores=NULL){
+  if (missing(predictions)) { stop("vbgamlss.predictions is missing")}
+  if (missing(yimage)) { stop("vbgamlss.predictions is missing")}
+  if (is.null(num_cores)) {num_cores <- availableCores()}
+  
+  # 4d to 2D and set a global variable: subjects (4th dim) x voxels (columns)
+  yvoxeldata <- images2matrix(yimage, ymask)
+  gc()
+  # parallel function
+  do.zscore <- function(obj) {
+    pred <- obj$pred
+    yval <- obj$yvxldat
+    # get number of params
+    lpar <- sum(names(pred) %in% c("mu", "sigma", "nu", "tau"))
+    qfun <- paste("p",pred$family,sep="")
+    if (lpar == 1) {
+      newcall <- call(qfun, yval, mu = pred$mu)
+    } else if (lpar == 2) {
+      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma)
+    } else if (lpar == 3) {
+      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma, nu = pred$nu)
+    } else {
+      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma, nu = pred$nu, tau = pred$tau)
+    }
+    cdf <- eval(newcall)       
+    rqres <- qnorm(cdf)
+    return(rqres)
+  }
+  
+  # compute chunk size
+  Nchunks <- estimate_nchunks(yvoxeldata)
+  # parallel call
+  zscores = c()
+  chunked = as.list(isplitIndices(ncol(yvoxeldata), chunks=Nchunks))
+  i = 1
+  for (ichunk in chunked){
+    cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
+    i<- i+1
+    # chunk yvoxeldata and predictions
+    iterable_chunk <- mapply(list, 
+                             pred = predictions[ichunk],
+                             yvxldat = yvoxeldata[,ichunk], 
+                             SIMPLIFY=F)
+    # compute z-scores
+    subzs <- pbmclapply(iterable_chunk, 
+                        do.zscore, 
+                        mc.cores=num_cores)
+    zscores <- c(zscores, subzs)
+  }
+  
+  return(structure(zscores, class = "vbgamlss.zscores"))
 }

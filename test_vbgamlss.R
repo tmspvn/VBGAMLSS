@@ -1,13 +1,17 @@
 source('~/PycharmProjects/NormativeModellingPsychosis/gamlss/VBGAMLSS/VBGAMLSS.R')
+library(gamlss)
+library(gamlss2)
 
 ### test ### https://cran.r-project.org/web/packages/voxel/voxel.pdf
-image <- '/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/funneled.nii.gz'
+image <- '/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/funneled_mod.nii.gz'
 mask <- '/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/vol.0_mask.nii.gz'
+
 set.seed(1)
 nsubj <- 258
-covs <- data.frame(x = rnorm(nsubj), x1 = rnorm(nsubj)*runif(nsubj), x2 = rnorm(nsubj))
+covs <- data.frame(x = 1:258, x1 = rnorm(nsubj)*runif(nsubj), x2 = rnorm(nsubj))
 covs2 <- data.frame(x = rnorm(nsubj), x1 = rnorm(nsubj)*rnorm(nsubj), x2 = rnorm(nsubj))
-fm1 <- "~ x + x1 | x + x2 "
+
+fm1 <- "Y ~ pb(x)"
 
 models <- vbgamlss_chunks(image=image, 
                    mask=mask, 
@@ -20,7 +24,12 @@ predictions <- predict.vbgamlss(models_load, newdata = covs2)
 zscores <- zscore.vbgamlss(predictions, image, mask)
 
 # not saving properly because of the name()
-map_model_coefficients(models, mask, filename='/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/pmap')
+map_model_coefficients(models_load, mask, 
+                       filename='/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/cmap')
+map_model_predictions(predictions, mask, index=20:30,
+                      filename='/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/test_pred/predict')
+map_zscores(zscores, mask, index=20:30,
+                      filename='/home/localadmin/PycharmProjects/NormativeModellingPsychosis/gamlss/tests/test_pred/score_')
 
 
 # test antsr
@@ -61,12 +70,10 @@ df$sex <- as.factor(df$sex)
 df$scanner <- as.factor(df$scanner)
 df$group <- as.factor(df$group)
 
-f <- 
-
 ## Estimate model.
-b <- gamlss2(volume ~ pb(ageY) | sex | group, 
+b <- gamlss2(volume ~ gamlss::pb(ageY) | sex | group, 
              data = df, 
-             family = SHASH)
+             family = NO)
 
 ## Model summary.
 summary(b)
