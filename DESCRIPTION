@@ -1,0 +1,20 @@
+Package: VBGAMLSS
+Title: Fit GAMLSS models voxel-wise for normative modelling
+Version: 0.0.0.9000
+Authors@R: 
+    person("Tommaso", "{Pavan", , "tommaso.pavan@chuv.ch", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0002-3436-6882"))
+Description: Fit GAMLSS models voxel-wise for normative modelling.
+License: Apache License (>= 2)
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.1
+Imports: 
+    ANTsR,
+    doFuture,
+    gamlss,
+    gamlss2,
+    itertools,
+    pbmcapply,
+    progressr,
+    tibble
