@@ -1,6 +1,6 @@
 ################################  Support  #####################################
 
-
+#TODO: add prodist predict: gamlss2::prodist(object, ...)
 
 
 
@@ -77,7 +77,8 @@ load_model <- function(file_prefix, num_cores = NULL) {
 }
 
 #' @export
-load_model_chunks <- function(file_prefix, num_cores = NULL) {
+load_model_chunks <- function(file_prefix, num_cores = NULL, chunk_max_mb=256,
+                              index=NULL) {
   if (is.null(num_cores)) {num_cores <- availableCores()}
   # parse path:
   parts <- unlist(strsplit(file_prefix, "/"))
@@ -95,21 +96,31 @@ load_model_chunks <- function(file_prefix, num_cores = NULL) {
 
   if (length(missing_numbers) == 0) {
     cat(paste0('Found models for ', length(integer_suffixes), ' voxels.'), fill=T)
+    cat(paste0('Expect long post-processing.'), fill=T)
   } else {
-    cat(paste0("Some models are missing. Can't find model[s] for voxel: ", missing_numbers), fill=T)
+    warning(paste0("Some models are missing. Can't find model[s] for voxel: ", missing_numbers))
   }
   integer_suffixes <- as.list(sort(integer_suffixes))
+
+  # subset the voxel models to load by index
+  if (! is.null(index)){
+    integer_suffixes <- integer_suffixes[index]
+    cat('Index is set, loading only the voxels models number: ',index, '\n', fill=T)
+    }
   # parallel call
-  Nchunks = estimate_nchunks(paste0(file_prefix, ".", 1), from_files=TRUE)
+  plan(cluster, workers = num_cores)
+  Nchunks = estimate_nchunks(paste0(file_prefix, ".", 1),
+                             from_files=TRUE,
+                             chunk_max_Mb=chunk_max_mb)
   chunked = as.list(isplitIndices(length(integer_suffixes), chunks=Nchunks))
   models = c()
   i = 1
   for (ichunk in chunked){
     cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
     i<- i+1
-    # compute z-scores
     integer_suffixes_chunked <- integer_suffixes[ichunk]
     p <- progressor(length(integer_suffixes_chunked))
+    # parallel loop
     loaded <- foreach(i = integer_suffixes_chunked) %dofuture% {
       rds <- readRDS(paste0(file_prefix, ".", i))
       p()
@@ -131,7 +142,7 @@ load_model_chunks <- function(file_prefix, num_cores = NULL) {
 #' @param ... Additional arguments to be passed to the \code{\link{predict}} function.
 #' @return A structure containing predictions.
 #' @export
-predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ...){
+predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parameter', ...){
   if (missing(object)) { stop("vbgamlss is missing")}
   if (is.null(num_cores)) {num_cores <- availableCores()-1}
   # compute chunk size
@@ -152,6 +163,7 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ...){
                           vxlgamlss$family <- familyobj
                           l <- as.list(predict(vxlgamlss,
                                                newdata = newdata,
+                                               type=ptype,
                                                ...))
                           l$family <- fname
                           l$vxl <- vxlgamlss$vxl

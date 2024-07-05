@@ -7,7 +7,6 @@
 
 
 
-
 #' Estimate number of chunks based on object size
 #'
 #' @param object R object for chunk size estimation.
@@ -25,6 +24,8 @@ estimate_nchunks <- function(object, from_files=F, chunk_max_Mb=256) {
   }
   return(Nchunks)
 }
+
+
 
 #' @export
 images2matrix <- function(image_list, mask) {
@@ -58,9 +59,63 @@ images2matrix <- function(image_list, mask) {
   return(as.data.frame(dataMatrix))
 }
 
+
+
+
 #' @export
 matrix2image <- function(matrix, mask){
   if (missing(matix)) { stop("matrix is missing")}
   if (missing(mask)) { stop("mask is missing")}
   return()
 }
+
+
+
+#' @export
+get_subsample_indices <- function(len, sampling_type, factor) {
+if (!is.numeric(factor) && factor>0 && factor<=1) {
+      stop("Error: factor (or subsample) must be numeric between (0, 1]")
+    }
+
+  if (!sampling_type %in% c("random", "regular")) {
+    stop("Sampling type must be either 'random' or 'regular'.")
+  }
+
+  # Calculate the number of elements to sample
+  n <- ceiling(len * factor)
+
+  cat(paste0('Subsampling by a factor of ', factor, ' (', n,'/', len,' vxl)',
+             ', with strategy: ', sampling_type, '\n\n'), fill=T)
+
+  if (sampling_type == "regular") {
+    # Calculate the step size for regular sampling
+    step_size <- floor(len / n)
+
+    # Generate a sequence of indices to select from the vector
+    indices <- seq(1, len, by = step_size)
+    # Ensure we only select `n` indices
+    indices <- indices[1:n]
+  } else if (sampling_type == "random") {
+    # Randomly sample `n` indices from the vector
+    indices <- sample(1:len, n)
+  }
+
+  return(indices)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,6 +1,8 @@
 ################################  Core  ########################################
-
-
+# install.packages("gamlss2",
+#                  repos = c("https://gamlss-dev.R-universe.dev",
+#                   "https://cloud.R-project.org"))
+# devtools::install_github('ANTsX/ANTsR')
 
 
 
@@ -61,12 +63,14 @@ vbgamlss <- function(image, mask, g.formula, train.data, g.family=NO,
   return(structure(models, class = "vbgamlss"))
 }
 
+
 #' @export
 vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
                             segmentation=NULL,
                             num_cores=NULL,
                             chunk_max_mb=64,
                             afold=NULL,
+                            subsample=NULL,
                             ...) {
 
   if (missing(image)) { stop("image is missing")}
@@ -86,11 +90,20 @@ vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
   #   a fold must be a boolean vector of length of number of subjects (image 4th dim)
   if (!is.null(afold)){
     if (!is.logical(afold) && !is.integer(afold)) {
-      stop("Error: afold must be either logical or integer.")
+      stop("Error: afold must be either logical or integer vector.")
     }
     voxeldata <- voxeldata[afold,]
     segmentation <- segmentation[afold,]
     train.data <- train.data[afold,]
+  }
+
+  # subset the dataframe if a subsampling scheme is provided
+  if (!is.null(subsample)){
+    if (!is.numeric(subsample)) {
+      stop("Error: subsample must be a numeric vector of indeces of length sum(mask>0).")
+    }
+    voxeldata <- voxeldata[,subsample]
+    segmentation <- segmentation[,subsample]
   }
 
   # Coerce update on left hand g.formula for parallel fitting
@@ -100,6 +113,7 @@ vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
   plan(cluster, workers = num_cores, rscript_libs = .libPaths())
   handlers(global = TRUE)
   handlers("pbmcapply")
+  p <- with_progress(progressor(ncol(voxeldata)))
   future.opt <- list(packages=c('gamlss2'))
   # compute chunk size
   Nchunks <- estimate_nchunks(voxeldata, chunk_max_Mb=chunk_max_mb)
@@ -143,9 +157,8 @@ vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
 }
 
 
-
 #' @export
-vbgamlss2_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
+vbgamlss_pbmclapply <- function(image, mask, g.formula, train.data, g.family=NO,
                              segmentation=NULL,
                              num_cores=NULL,
                              chunk_max_mb=258,
