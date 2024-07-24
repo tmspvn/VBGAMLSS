@@ -1,0 +1,14 @@
+#!/bin/bash
+#SBATCH --job-name={{slurm$jobname}}
+#SBATCH --output={{slurm$output}}
+#SBATCH --error={{slurm$output}}
+#SBATCH --time={{slurm$time}}
+#SBATCH --mem-per-cpu={{slurm$mempercpu}}
+#SBATCH --cpus-per-task={{slurm$ncpu}}
+#SBATCH --array={{slurm$array}}
+#SBATCH --nodes=1
+
+# Enviroment variables
+module load singularityce/3.11.3
+containeR=/scratch/tpavan1/scripts_tommaso/test_batchtools/NormMod_modselR.sif
+singularity exec $containeR Rscript -e {{slurm$call}}

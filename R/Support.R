@@ -142,9 +142,33 @@ load_model_chunks <- function(file_prefix, num_cores = NULL, chunk_max_mb=256,
 #' @param ... Additional arguments to be passed to the \code{\link{predict}} function.
 #' @return A structure containing predictions.
 #' @export
-predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parameter', ...){
+predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parameter',
+                             segmentation=NULL, mask=NULL, afold=NULL, subsample=NULL,
+                             ...){
   if (missing(object)) { stop("vbgamlss is missing")}
-  if (is.null(num_cores)) {num_cores <- availableCores()-1}
+  if (is.null(num_cores)) {num_cores <- availableCores()}
+
+  # prepare segmentation & folds for CV if needed
+  if (!is.null(segmentation)){segmentation <- images2matrix(segmentation, mask)}
+  gc()
+
+  # subset the dataframe if the input is a fold from CV
+  #   a fold must be a boolean vector of length of number of subjects (image 4th dim)
+  if (!is.null(afold)){
+    if (!is.logical(afold) && !is.integer(afold)) {
+      stop("Error: afold must be either logical or integer vector.")
+    }
+    segmentation <- segmentation[afold,]
+  }
+
+  # subset the dataframe if a subsampling scheme is provided
+  if (!is.null(subsample)){
+    if (!is.numeric(subsample)) {
+      stop("Error: subsample must be a numeric vector of indeces of length sum(mask>0).")
+    }
+    segmentation <- segmentation[,subsample]
+  }
+
   # compute chunk size
   Nchunks <- estimate_nchunks(object)
   # predict
@@ -158,11 +182,16 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parame
   for (chunk in chunked){
     cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
     i<- i+1
-    subpr <- pbmclapply(chunk,
-                        function(vxlgamlss) {
+    subpr <- pbmclapply(seq(length(chunk)),
+                        function(i) {
+                          vxlgamlss <- chunk[[i]]
                           vxlgamlss$family <- familyobj
+                          # if multi tissue add
+                          newdata_ <- newdata
+                          if (!is.null(segmentation)){
+                            newdata_$tissue <- segmentation[,i]}
                           l <- as.list(predict(vxlgamlss,
-                                               newdata = newdata,
+                                               newdata = newdata_,
                                                type=ptype,
                                                ...))
                           l$family <- fname

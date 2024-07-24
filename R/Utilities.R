@@ -90,7 +90,6 @@ if (!is.numeric(factor) && factor>0 && factor<=1) {
   if (sampling_type == "regular") {
     # Calculate the step size for regular sampling
     step_size <- floor(len / n)
-
     # Generate a sequence of indices to select from the vector
     indices <- seq(1, len, by = step_size)
     # Ensure we only select `n` indices
@@ -106,16 +105,70 @@ if (!is.numeric(factor) && factor>0 && factor<=1) {
 
 
 
+#' @export
+combine_formulas_gamlss2 <- function(mu_list, sigma_list,
+                                     nu_list, tau_list,
+                                     families=NULL) {
+  # warning
+  dowarn <- (length(mu_list) * length(sigma_list) * length(nu_list) * length(tau_list) * length(families))>200
+  if (dowarn){warning('Number of formula to test in >200!')}
+  # check if there's a ~1 else force it
+  add_intercept_if_missing <- function(lst) {
+    if ( ! '1' %in% lst) {
+        lst[length(lst)[1]+1]  <- '1'
+    }
+    return(lst)
+  }
+  # add intercept?
+  sigma_list <- add_intercept_if_missing(sigma_list)
+  nu_list <- add_intercept_if_missing(nu_list)
+  tau_list <- add_intercept_if_missing(tau_list)
+  # combine
+  combined_formulas <- c()
+  i <- 0
+  for (formula1 in mu_list) {
+    for (formula2 in sigma_list) {
+      for (formula3 in nu_list) {
+        for (formula4 in tau_list) {
+          combined_formula <- paste(formula1, " | ", formula2, " | ",
+                                    formula3, " | ", formula4)
+          combined_formulas <- c(combined_formulas, combined_formula)
+          i <- i+1
+      }
+     }
+    }
+  }
+  # map families if requested
+  combined_formulas_with_fam <- c()
+  if (!is.null(families)){
+    for (fam in families){
+        fam_form <- paste0(fam, ' :: ', combined_formulas)
+        combined_formulas_with_fam <- c(combined_formulas_with_fam, fam_form)
+    }
+    combined_formulas <- combined_formulas_with_fam
+  }
+  return(combined_formulas)
+}
 
 
+quite <- function(x, skip=F) {
+  if (! skip){
+    sink(tempfile())
+    on.exit(sink())
+    invisible(force(x))
+  } else {force(x)}
+}
 
+rand_names <- function(num_names){
+  return(replicate(num_names, paste0(sample(c(letters, LETTERS), 10, replace = TRUE), collapse = "")))
+}
 
+check_formula_LHS <- function(formula) {
+  formula <- as.formula(formula)
+  terms_formula <- terms(formula)
+  lhs <- attr(terms_formula, "variables")[[2]]
 
-
-
-
-
-
-
-
-
+  if (deparse(lhs) != "Y") {
+    stop("Error: The left term of the formula must be 'Y'.")
+  }
+}

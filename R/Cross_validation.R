@@ -10,26 +10,26 @@
 vbgamlss.cv <- function(image, mask, g.formula, train.data, fold.var, g.family = NO,
                       segmentation = NULL, num_cores = NULL, chunk_max_mb = 64,
                       n_folds = 10, k.penalty=NULL, verbose=F,
-                      return_all_GD=T, subsample=NULL,
+                      return_all_GD=T, subsample.factor=NULL,
                       subsample.type=c('regular', 'random'),
                       ...) {
   if (missing(image)) { stop("image is missing") }
   if (missing(mask)) { stop("mask is missing") }
-  if (missing(g.formula)) { stop("formula is missing") }
-  if (missing(train.data)) { stop("subjData is missing") }
   if (missing(fold.var)) { stop("variable to use in the stratified CV is missing") }
-  if (class(g.formula) != "character") { stop("g.formula class must be character") }
-
-  if (is.null(num_cores)) { num_cores <- availableCores() }
+  if (missing(g.formula)) { stop("formula is missing")}
+  check_formula_LHS(g.formula)
+  if (missing(train.data)) { stop("subjData is missing")}
+  # Force character columns to factors
+  train.data <- as.data.frame(unclass(train.data),stringsAsFactors=TRUE)
 
   # Create stratified folds
   train.data$folds <- stratCVfolds(fold.var, k = n_folds)
   # subsample?
-  if (! is.null(subsample)){
-    subsample <- get_subsample_indices(sum(antsImageRead(mask)>0),
+  if (! is.null(subsample.factor)){
+    subsample_ <- get_subsample_indices(sum(antsImageRead(mask)>0),
                                        subsample.type,
-                                       subsample)
-  }
+                                       subsample.factor)
+  } else {subsample_ <- NULL}
 
   # Prepare storage for results
   cvresults <- c()
@@ -39,35 +39,38 @@ vbgamlss.cv <- function(image, mask, g.formula, train.data, fold.var, g.family =
     cat(paste0("\n\nProcessing fold ", fold, " of ", n_folds, "\n"), fill=T)
 
     # Split data into training and validation sets
-    training_fold = train.data$folds == fold
+    training_fold = train.data$folds != fold
     test_indices <- which(train.data$folds == fold)
     test_fold_data <- train.data[test_indices, ]
     cat('-Fitting fold', fill=T)
     # Fit the model on the training fold
     model <- quite(vbgamlss_chunks(image,
                                    mask,
-                                   g.formula,
+                                   as.formula(g.formula),
                                    train.data,
                                    g.family,
                                    segmentation,
                                    num_cores,
                                    chunk_max_mb=128,
-                                   afold=training_fold,
-                                   subsample=subsample),
+                                   afold=training_fold, # pass fold indexes
+                                   subsample=subsample_),
                    skip=verbose)
     # predict new fold
     cat('-Estimating GD', fill=T)
     # options(future.globals.maxSize=2000*1024^2) # 2000mb limit may be needed
-    GDs <- predictGD(model, newdata = test_fold_data, verbose=verbose)
+    GDs <- predictGD(model, newdata = test_fold_data, verbose=verbose,
+                     segmentation=segmentation,
+                     mask=mask,
+                     afold=test_indices,
+                     subsample=subsample_)
     # get statistics for validation Global Deviance
     cat('-Summarizing statistics', fill=T)
-    stat = statGD(GDs,
+    stats <- statGD(GDs,
                   k.penalty,
                   deg.fre=model[[1]]$df,
                   return_all_GD=return_all_GD)
-
     # Store the model and validation set
-    cvresults[[fold]] <- stat
+    cvresults[[fold]] <- stats
     # clean
     rm(model)
     rm(GDs)
@@ -77,26 +80,32 @@ vbgamlss.cv <- function(image, mask, g.formula, train.data, fold.var, g.family =
 }
 
 
-predictGD <- function (object, newdata = NULL, verbose=F, ...) {
+predictGD <- function (object, newdata = NULL, verbose=F,
+                       segmentation=NULL, mask=NULL, afold=NULL, subsample=NULL, ...) {
   if (is.null(newdata)){stop("newdata is not set")}
+
+  ## predict GD ##
   fname <- object$family[[1]]
   fname <- as.character(object[[1]]$family)
   familyobj <- gamlss2:::complete_family(get(fname))
   quite(cat('Predicting fold parameters', fill=T), skip=verbose)
-  nfitted <- quite(predict.vbgamlss(object, newdata = newdata,
-                                    ptype='parameter'), skip=verbose)
-  nsub <- length(nfitted[[1]]$mu)
+  nfitted <- quite(predict.vbgamlss(object, newdata = newdata, ptype='parameter',
+                                    segmentation=segmentation,
+                                    mask=mask, afold=afold,
+                                    subsample=subsample), skip=verbose)
+  nsub <- length(nfitted[[1]]['mu'])
   # add response to nfitted (from gamlss2.predict)
   quite(cat('Predicting fold response', fill=T), skip=verbose)
-  resp <- quite(predict.vbgamlss(object, newdata = newdata,
-                                 ptype='response'), skip=verbose)
+  resp <- quite(predict.vbgamlss(object, newdata = newdata, ptype='response',
+                                 segmentation=segmentation,
+                                 mask=mask, afold=afold,
+                                 subsample=subsample), skip=verbose)
   for(i in 1:length(object)){
-    nfitted[[i]]$y <- unlist(resp[[i]][1:nsub])
+    nfitted[[i]]['y'] <- unlist(resp[[i]][1:nsub])
   }
   rm(resp)
-
   # test GD
-  quite(cat('Redicting test fold GD ', fill=T), skip=verbose)
+  quite(cat('Predicting test fold GD ', fill=T), skip=verbose)
   plan(cluster)
   GDs <- foreach(i=1:length(object)) %dofuture% {
     vxlGD <- testGD(nfitted[[1]], familyobj)
@@ -219,7 +228,7 @@ statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
 
   to_return = list(GD=GD, GDpen=GDp, predErr=PE, Resids=RS)
 
-  if (! return_all_GD){ to_return <- append(to_return, list(allGD=TGDs)) }
+  if (return_all_GD) {to_return <- append(to_return, list(allGD=TGDs))}
   return(to_return)
 }
 
@@ -248,18 +257,34 @@ stratCVfolds <- function(df, k.fold=10){
 
 
 getCVGD <- function(cvresults, term='mean') {
+  # mean, sd,
+  # quantile.0%, quantile.25%, quantile.50%, quantile.75%, quantile.100%,
+  # min, max
   CVGD = 0
   for (fold in cvresults) {CVGD <- CVGD + fold$GD[[term]]}
   return(CVGD)
 }
 
 
-getCVGDpen <- function(cvresults, term='mean') {
+getCVGD.pen <- function(cvresults, term='quantile.50%') {
   CVGD = 0
   for (fold in cvresults) {CVGD <- CVGD + fold$GDpen[[term]]}
   return(CVGD)
 }
 
+
+getCVGD.all <- function(cvresults, penalized=F) {
+  out <- c()
+  for (t in c('mean', 'sd', 'quantile.0%', 'quantile.25%', 'quantile.50%',
+              'quantile.75%', 'quantile.100%', 'min', 'max')) {
+    if (penalized) {
+    out[[t]] <- getCVGD.pen(cvresults, term=t)
+    } else {
+      out[[t]] <- getCVGD(cvresults, term=t)
+    }
+  }
+  return(out)
+}
 
 
 akaike_weights <- function(v){
@@ -272,13 +297,6 @@ akaike_weights <- function(v){
 
 
 
-quite <- function(x, skip=F) {
-  if (! skip){
-    sink(tempfile())
-    on.exit(sink())
-    invisible(force(x))
-  } else {force(x)}
-}
 
 
 
