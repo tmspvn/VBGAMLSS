@@ -7,24 +7,29 @@
 
 
 
-vbgamlss.model_selection <- function(result_file,
-                                      mu_formulas,
-                                      sigma_formulas,
-                                      nu_formulas,
-                                      tau_formulas,
-                                      fold.var,
-                                      image,
-                                      mask,
-                                      train.data,
-                                      families =  c('NO'),
-                                      segmentation = NULL,
-                                      chunk_max_mb = 128,
-                                      n_folds = 10,
-                                      k.penalty=NULL,
-                                      verbose=F,
-                                      return_all_GD=T,
-                                      subsample=NULL,
-                                      subsample.type=c('regular', 'random'),
+vbgamlss.model_selection <- function(# model selection commands
+                                     result_file,  # where to save
+                                     resume_registry=NULL,  # pass registry file, works as toggle for resume
+                                     reset_enviroment=T,   # reset passed global environment instead of resuming
+                                     sbatch_resources=list(t='71:59:00', m='40G', c='12'),
+                                     # gamlss cv commands
+                                     mu_formulas,
+                                     sigma_formulas,
+                                     nu_formulas,
+                                     tau_formulas,
+                                     fold.var,
+                                     images,  # pass one path or more as vector
+                                     mask,
+                                     train.data,
+                                     families =  c('NO'),
+                                     segmentation = NULL,
+                                     chunk_max_mb = 128,
+                                     n_folds = 5,
+                                     k.penalty=NULL,
+                                     verbose=F,
+                                     return_all_GD=T,
+                                     subsample=NULL,
+                                     subsample.type=c('regular', 'random'),
                                       ...){
 
   if (class(train.data) != "character") { stop("train.data class must be a path")}
@@ -33,54 +38,94 @@ vbgamlss.model_selection <- function(result_file,
   all_formulas <- combine_formulas_gamlss2(mu_formulas, sigma_formulas,
                                            nu_formulas, tau_formulas,
                                            families)
-  nfm <- length(all_formulas)
 
-  # Prepare registry
+  # add input image in case of multiple input images to fit
+  formulas_by_image <- c()
+  for (im in images) {
+    formulas_by_image <- c(formulas_by_image,
+                           paste0(im, ' :: ', all_formulas))
+  }
+  nfm <- length(formulas_by_image)
+
+  ### Prepare template ###
   template <- slurm_template()
-  registry <- slurm_registry(nfm)
-  registry$formulas <- all_formulas
-  registry$pkgs <- loadedNamespaces()
-  # Save the environment to the file
-  registry$env <- paste0(registry$path, '/.Enviroment.RData')
-  save.image(file = registry$env)
-  # Save session info
-  writeLines(capture.output(sessionInfo()),
-             file(paste0(registry$path, '/.SessionInfo.txt')))
 
-  #### Generate jobs to the HPC ####
+  ### Resume registry? ###
+  if (is.null(resume_registry)) {
+    cat(paste0('Generating *new* registry'), fill = TRUE)
+    # Prepare registry
+    template <- slurm_template()
+    registry <- slurm_registry(nfm)
+    registry$formulas <- formulas_by_image
+    registry$pkgs <- loadedNamespaces()
+    # Save session info
+    writeLines(capture.output(sessionInfo()),
+               file(paste0(registry$path, '/.SessionInfo.txt')))
+    # Save the environment & registry to file
+    registry$genv <- paste0(registry$path, '/.Global.Enviroment.RData')
+    save.image(file = registry$genv)
+    # Save registry
+    saveRDS(registry, registry$reg_path)
+
+  } else {
+    cat(paste0('Loading *past* registry'), fill = TRUE)
+    registry <- readRDS(resume_registry)
+    # reset global environment, useful in case of changes to core functions
+    if (reset_enviroment) {
+      cat(paste0('Reset global enviroment'), fill = TRUE)
+      save.image(file = registry$genv)
+      }
+  }
+
+
+  ### Generate jobs to the HPC ###
+  if (is.null(resume_registry)) {
   cat(paste0('Generating ', nfm, ' jobs'), fill = TRUE)
-
   for (i in 1:nfm) {
     # assign correct paths
     slurm <- slurm_resources(n=registry$jobs[i],
                              o=registry$jobs_sout[i],
                              e=registry$jobs_sout[i],
-                             r=registry$jobs_results[i])
+                             r=registry$jobs_results[i],
+                             t=sbatch_resources$t,
+                             m=sbatch_resources$m,
+                             c=sbatch_resources$c)
+    slurm$wd <- registry$jobspaths[i]
+    slurm$jenv <- registry$jobs_env[i]
 
     # Parse formula for slurm call
     parsed <- strsplit(registry$formulas[i], " :: ", fixed = TRUE)
-    g.family <- parsed[[1]][1]
-    g.formula <- parsed[[1]][2]
+    image <- parsed[[1]][1]
+    g.family <- parsed[[1]][2]
+    g.formula <- parsed[[1]][3]
+
+    # save job local environment
+    save(list = ls(all.names = TRUE), file = slurm$jenv)
+
     # Populate call
     CALL <- glue("
-    load('{registry['env']}')
-    quite(lapply({registry['pkgs']}, require, character.only = TRUE))
-    out <- vbgamlss.cv(g.formula = '{g.formula}',
-                      image = '{image}',
-                      mask = '{mask}',
-                      train.data = read.csv('{train.data}'),
-                      fold.var = {fold.var},
-                      g.family = '{g.family}',
-                      segmentation = '{segmentation}',
-                      chunk_max_mb = {chunk_max_mb},
-                      n_folds = {n_folds},
-                      k.penalty = {if (is.null(k.penalty)) 'NULL' else k.penalty},
-                      verbose = {verbose},
-                      return_all_GD = {return_all_GD},
-                      subsample = {if (is.null(subsample)) 'NULL' else subsample},
-                      subsample.type = '{subsample.type}',
-                      num_cores = NULL)
-    saveRDS(out, '{slurm$rdsout}')
+    load('{registry['genv']}')
+    load('{slurm$jenv}')
+    quite(lapply(registry$pkgs, require, character.only = TRUE))
+    set.seed(28041945)
+    out <- vbgamlss.cv(g.formula = g.formula,
+                      image = image,
+                      mask = mask,
+                      train.data = read.csv(train.data),
+                      fold.var = fold.var,
+                      g.family = g.family,
+                      segmentation = segmentation,
+                      chunk_max_mb = chunk_max_mb,
+                      n_folds = n_folds,
+                      k.penalty = k.penalty,
+                      verbose = verbose,
+                      return_all_GD = return_all_GD,
+                      subsample = subsample,
+                      subsample.type = subsample.type,
+                      num_cores = NULL,
+                      debug=T, save_states=T, resume=T,
+                      logdir = slurm$wd)
+    saveRDS(out, slurm$rdsout)
     ")
 
     SCRIPT <- registry$jobs_script[i]
@@ -91,28 +136,47 @@ vbgamlss.model_selection <- function(result_file,
     brew(text = template,
          output = JOB)
   }
+  } else {
+    cat(paste0('Using the pre-generated ', nfm, ' jobs'), fill = TRUE)
+  }
 
   sanity_check(c(registry$jobs_script, registry$jobs_sbatch))
 
 
-  #### Sbatch jobs to the HPC ####
-  cat(paste0('Sbatching ', nfm, ' jobs'), fill = TRUE)
-  registry$jobs_id <- sbatch_jobs(registry)
+  ####  Sbatch and monitor jobs to HPC, resbatch (max 4 times) if timeout or other ####
+  RESBATCH = 0
+  while (TRUE){
+    ## Sbatch jobs to the HPC ##
+    cat(paste0('Sbatching ', nfm, ' jobs'), fill = TRUE)
+    registry <- sbatch_jobs(registry)
 
-  ### MONITOR ###
-  cat(paste0('Monitoring ', nfm, ' jobs'), fill = TRUE)
-  tryCatch({
-    monitor_jobs(registry, sleep=5)
-  }, interrupt = function(e) {
-    cat("Script interrupted by the user!", fill=T)
-    cat("Killing the sbatched jobs...", fill=T)
-    registry$killall <- paste('scancel', paste(registry$jobs_id, collapse=" "))
-    system(registry$killall)
-  })
+    ## MONITOR ##
+    cat(paste0('Monitoring ', nfm, ' jobs'), fill = TRUE)
+    tryCatch({
+      registry <- monitor_jobs(registry, sleep=5, resbatch=RESBATCH)
+      },
+      interrupt = function(e) {
+        cat("Script interrupted by the user!", fill=T)
+        cat("Killing the sbatched jobs...", fill=T)
+        system(registry$killall)
+        break
+    })
+
+    # Check if all jobs are terminated
+    if (all(registry$status %in% c("FAILED", "COMPLETED"))) {break}
+
+    # max cluster time limit
+    if (RESBATCH > 4) {break}
+    RESBATCH <- RESBATCH + 1
+
+  }
 
   ### Gather the results ###
+  cat(paste0('gathering results'), fill = TRUE)
   results <- gather_jobs_outputs(registry) # to finish
-  #saveRDS(results, RESULTS_FILE)
+  saveRDS(results, RESULTS_FILE)
+  cat(paste0('Done.\n\n\n'), fill = TRUE)
+  warnings()
 }
 
 
@@ -140,7 +204,7 @@ singularity exec $containeR Rscript <%= SCRIPT %>
 
 
 slurm_resources <- function(n='VBGAMLSS', o=NULL, e=NULL,
-                            t='71:59:00',m='30G', c='12', a=1, r=NULL) {
+                            t='71:59:00', m='40G', c='12', a=1, r=NULL) {
   slurm <- list()
   slurm$jobname <- as.character(n)
   slurm$output <- as.character(o)
@@ -158,16 +222,19 @@ slurm_registry <- function(Njobs, env){
   registry$wd <- getwd()
   registry$main <- file.path(registry$wd, ".vbgamlss.slurm")
   registry$path <-file.path(registry$main, paste0('.', rand_names(1), '_', Sys.Date()))
-  registry$jobs <- paste0('.', rand_names(Njobs),'_', seq(Njobs))
+  registry$reg_path = file.path(registry$path, '.Slurm.Registry')
+  registry$jobs <- paste0('.', seq(Njobs),'_', rand_names(Njobs))
   registry$jobspaths <- file.path(registry$path, registry$jobs)
   registry$jobs_sout <- file.path(registry$jobspaths,
                                   paste0(registry$jobs, '.stdout'))
   registry$jobs_results <- file.path(registry$jobspaths,
-                                     paste0(registry$jobs, '.RDS'))
+                                     paste0(registry$jobs, '.results.rds'))
   registry$jobs_script <- file.path(registry$jobspaths,
                                     paste0(registry$jobs, '.R'))
   registry$jobs_sbatch <- file.path(registry$jobspaths,
                                      paste0(registry$jobs, '.job'))
+  registry$jobs_env <- file.path(registry$jobspaths,
+                                    paste0(registry$jobs, '.local.env'))
   quite(lapply(registry$jobspaths, dir.create, recursive = TRUE))
   registry$env <- NULL
   return(registry)
@@ -184,6 +251,7 @@ sanity_check <- function(file_list){
     }
   }
 }
+
 
 sbatch_jobs <- function(registry) {
   # example: 'Submitted batch job 22119441'
@@ -205,8 +273,11 @@ sbatch_jobs <- function(registry) {
     jobs_id <- c(jobs_id, id)
     Sys.sleep(0.5)
   }
-  return(jobs_id)
+  registry$jobs_id <- jobs_id
+  registry$killall <- paste('scancel', paste(registry$jobs_id, collapse=" "))
+  return(registry)
 }
+
 
 jobs_status <- function(registry, param='status') {
   # sacct -j 22119441 --format="JobID,State,Elapsed,ExitCode,End"
@@ -232,43 +303,81 @@ jobs_status <- function(registry, param='status') {
   if (param=='end'){return(jobs_end)}
 }
 
-monitor_jobs <- function(registry, sleep=10) {
+
+monitor_jobs <- function(registry, sleep=10, resbatch=NULL) {
   RUNNING = TRUE
+  start_time = Sys.time()
+  ct=0
   while (RUNNING) {
-    Sys.sleep(sleep)
-    # Format status into a data frame
-    registry$status <- jobs_status(registry, param='status')
-    status_df <- data.frame(JobID = registry$jobs_id,
-                            JobCode = registry$jobs,
-                            Status = registry$status,
-                            Time = jobs_status(registry, param='elapsed'),
-                            ExitCode = jobs_status(registry, param='exitcode'),
-                            End = jobs_status(registry, param='end')
-    )
+    Sys.sleep(1)
+    if ((ct %% sleep) == 0) {
+      ct <- 0
+      # Format status into a data frame
+      registry$status <- jobs_status(registry, param='status')
+      status_df <- data.frame(JobID = registry$jobs_id,
+                              JobCode = registry$jobs,
+                              Status = registry$status,
+                              Time = jobs_status(registry, param='elapsed'),
+                              ExitCode = jobs_status(registry, param='exitcode'),
+                              End = jobs_status(registry, param='end')
+      )
+    }
+
+    # Text printing
     system("clear")
     cat(' ', fill=T)
-    cat(paste('Last squeue refresh', Sys.time()), fill=T)
+    cat(paste('Sbatched time        ', format(start_time)), fill=T)
+    cat(' ', fill=T)
+    cat(paste('Last squeue refresh  ', format(Sys.time())), fill=T)
+    cat(' ', fill=T)
+    cat(paste('Elapsed              ', format(Sys.time()-start_time, digits=3)), fill=T)
     cat(' ', fill=T)
     print(status_df)
+    cat(' ', fill=T)
+    cat(paste('Refresh in ', sleep - ct - 1, ' sec'), fill=T)
+    if (! is.null(resbatch)) {cat(paste('Resbatch ', resbatch), fill=T)}
+
 
     # Check if all jobs are terminated
-    if (all(registry$status %in% c("COMPLETED", "FAILED",
-                                 "CANCELLED", "BOOT_FAIL",
-                                 "DEADLINE", "OUT_OF_MEMORY",
-                                 "NODE_FAIL", "PREEMPTED",
-                                 "REVOKED", "TIMEOUT"))) {
+    if ((ct %% sleep) == 0) {
+      if (all(registry$status %in% c("COMPLETED", "FAILED",
+                                   "CANCELLED", "BOOT_FAIL",
+                                   "DEADLINE", "OUT_OF_MEMORY",
+                                   "OUT_OF_ME+",
+                                   "NODE_FAIL", "PREEMPTED",
+                                   "REVOKED", "TIMEOUT"))) {
+        break
+      } }
+
+    # arbitrary max time limit (include pending jobs)
+    if (difftime(Sys.time(), start_time, units='hours') > 24*15) {
+      # kill and resbatch
+      system(registry$killall)
       break
-    }
+      }
+
+    # Time counter increment
+    ct <- ct + 1
   }
+
   system("clear")
-  print(status_df)
-  cat(paste0('\nAll Jobs terminated:', Sys.time(), ''), fill=T)
-  cat(paste0('Registry path:', registry$path), fill=T)
-  cat("Done", fill = T)
+  return(registry)
 }
 
+
+# print(status_df)
+# cat(paste0('\nAll Jobs terminated:', Sys.time(), ''), fill=T)
+# cat(paste0('Registry path:', registry$path), fill=T)
+# cat("Done", fill = T)
+
+
+
+
 gather_jobs_outputs <- function(registry){
-  NULL
+  final <- setNames(lapply(seq_along(registry$formulas),
+                           function(i) readRDS(registry$jobs_results[[i]])),
+                    registry$formulas)
+  return(final)
 }
 
 

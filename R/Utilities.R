@@ -7,6 +7,50 @@
 
 
 
+#' Check input data
+#'
+#' @param input image to check
+#' @return mask input
+#' @export
+load_input_image <- function(image, mask=NULL){
+  if (missing(image)) { stop("image is missing")}
+  # check image input format
+  if (is.character(image)){
+    # check if file exist
+    if (!file.exists(image)) {stop("Image file does not exist.")}
+
+    # try load rds?
+    is_rds <- tryCatch({
+              voxeldata <- readRDS(image)
+              cat("loading RDS file, mask is ignored.")
+              TRUE
+            }, error = function(e){F})
+
+    # if not red try load nifti?
+    if (!is_rds){
+      if (is.null(mask)) { stop("mask must be specified if image is a path to .nii")}
+      tryCatch({
+        voxeldata <- images2matrix(image, mask)
+      }, error = function(e){
+        cat('Error: ', e$call, '\n')
+        cat('Error: ', e$message, '\n')
+        stop("Image input must be a *path* to a RDS, nifti *or* a data frame object.")
+      })
+    }
+
+    # if not a character, try load data frame
+  } else {
+    if (is.data.frame(image)){
+      voxeldata <- image
+      warning("Data.frame passed, mask is ignored.")
+      } else{
+      stop("Image input must be a *path* to a RDS, nifti *or* a data frame object.")
+    }
+  }
+  return(voxeldata)
+}
+
+
 #' Estimate number of chunks based on object size
 #'
 #' @param object R object for chunk size estimation.
@@ -59,15 +103,6 @@ images2matrix <- function(image_list, mask) {
   return(as.data.frame(dataMatrix))
 }
 
-
-
-
-#' @export
-matrix2image <- function(matrix, mask){
-  if (missing(matix)) { stop("matrix is missing")}
-  if (missing(mask)) { stop("mask is missing")}
-  return()
-}
 
 
 
@@ -159,9 +194,11 @@ quite <- function(x, skip=F) {
   } else {force(x)}
 }
 
-rand_names <- function(num_names){
+
+rand_names <- function(num_names, l=10){
   return(replicate(num_names, paste0(sample(c(letters, LETTERS), 10, replace = TRUE), collapse = "")))
 }
+
 
 check_formula_LHS <- function(formula) {
   formula <- as.formula(formula)
@@ -172,3 +209,49 @@ check_formula_LHS <- function(formula) {
     stop("Error: The left term of the formula must be 'Y'.")
   }
 }
+
+
+
+TRY <- function(expr, logfile=NULL, save.env.and.stop=F){
+  res <-tryCatch(expr={expr},
+                  error = function(e) {
+                   if (!is.null(logfile)){
+                     cat(paste('ERROR:\n\n', e$message), "\n\n",
+                         file = logfile, append = TRUE)
+                     if (save.env.and.stop) {
+                       save(list = ls(all.names = TRUE),
+                            file = paste0(logfile, '.ERROR.local.enviroment'))
+                       stop('Stopping on first error,
+                            *save.env.and.stop* is set to TRUE')
+                         }
+                     }
+                     g <- NA # missfit
+                   },
+                  warning = function(w) {
+                    if (!is.null(logfile)){
+                      # Save the error message to a file
+                      cat(paste('WARN:\n\n', w$message), "\n\n",
+                          file = logfile, append = TRUE)
+                    }
+                    expr
+                  }
+  )
+  return(res)}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
