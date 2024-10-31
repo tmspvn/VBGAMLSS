@@ -1,6 +1,6 @@
-Fit GAMLSS models voxel-wise for normative modelling
+# Fit GAMLSS models voxel-wise for normative modelling
 
-# requirements
+### requirements
 ```
 ANTsR,
 doFuture,
@@ -11,12 +11,13 @@ pbmcapply,
 progressr,
 tibble
 ```
-# install gamlss2
+#### install gamlss2
 ```
 install.packages("gamlss2", repos = c("https://gamlss-dev.R-universe.dev", "https://cloud.R-project.org"))
 ```
 
-Example, package is work in progress, please source individual scripts:
+# Example 
+### package is work in progress, please source individual scripts:
 ```
 set.seed(1)
 img <- '~/subjects.nii.gz'  # 90x90x90x258
