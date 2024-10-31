@@ -4,7 +4,7 @@ Fit GAMLSS models voxel-wise for normative modelling
 
 
 Example:
-'''
+```
 set.seed(1)
 img <- '~/subjects.nii.gz' # 90x90x90x258
 msk <- '~/mask.nii.gz'
@@ -22,7 +22,7 @@ save_model(models, '~/vbgamlss.model/fitted_model')
 models_load <- load_model('~/vbgamlss.model/fitted_model.vbgamlss')
 predictions <- predict.vbgamlss(models_load, newdata = covs2, ptype='response')
 zscores <- zscore.vbgamlss(predictions, image, mask)
-'''
+```
 
 
 
