@@ -11,9 +11,10 @@ pbmcapply,
 progressr,
 tibble
 ```
-#### install gamlss2
+#### install gamlss2 & ANTsR
 ```
 install.packages("gamlss2", repos = c("https://gamlss-dev.R-universe.dev", "https://cloud.R-project.org"))
+devtools::install_github('ANTsX/ANTsR')
 ```
 
 # Example 

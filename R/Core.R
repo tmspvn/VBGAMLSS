@@ -9,27 +9,53 @@
 # fo$valid.response()
 #
 #
-# TODOs: replace image input from an auto selection of:
-#         (1) image path, (2) ants image object,
-#         (3) Sub x Voxels matrix [x Time matrix,]
-#         (4) RDS file with Sub x Voxels [x Time matrix]
 #
 #
 #
-### vbgamlss with chunking ###
-
-
+#' @title Fit Bayesian Generalized Additive Models for Location Scale and Shape (GAMLSS) with Voxel Data
+#'
+#' @description
+#' The `vbgamlss` function fits Bayesian GAMLSS models on voxel data with optional segmentation,
+#' allowing for parallel processing. This function can be used to analyze high-dimensional imaging data.
+#'
+#' @param imageframe A data frame containing the voxel data. Each column represents a voxel,
+#'                   and each row represents a subject.
+#' @param g.formula A formula for the GAMLSS model.
+#' @param train.data A data frame containing subject-level data. Columns must correspond to covariates in `g.formula`.
+#' @param g.family A GAMLSS family object. Defaults to `NO` (Normal).
+#' @param segmentation Optional data frame containing segmentation information.
+#' @param segmentation_target Optional target for the segmentation data to subset the analysis.
+#' @param num_cores Number of cores for parallel processing. If NULL, all available cores are used.
+#' @param chunk_max_mb Maximum chunk size in megabytes for processing. Defaults to 64 MB.
+#' @param afold Optional boolean or integer vector to subset imageframe for cross-validation folds.
+#' @param subsample Optional numeric vector specifying indices of columns in imageframe to subset for analysis.
+#' @param debug Logical. If TRUE, enables debug mode to log output in `logdir`. Defaults to FALSE.
+#' @param logdir Directory path for saving logs if `debug` is TRUE. Defaults to current working directory.
+#' @param ... Additional arguments passed to the GAMLSS fitting function.
+#'
+#' @return A list of GAMLSS models, with class `"vbgamlss"`.
+#'
+#' @details
+#' The function performs the following steps:
+#' - Checks input data and prepares voxel and segmentation data as needed.
+#' - If parallel processing is enabled, splits voxel data into chunks based on memory constraints.
+#' - Fits a GAMLSS model to each voxel using specified covariates and segmentation data, if available.
+#' - Returns a list of models, one for each voxel.
+#'
 #' @export
-vbgamlss <- function(imageframe, g.formula, train.data, g.family=NO,
-                            segmentation=NULL,
-                            segmentation_target=NULL,
-                            num_cores=NULL,
-                            chunk_max_mb=64,
-                            afold=NULL,
-                            subsample=NULL,
-                            debug=F,
-                            logdir=getwd(),
-                            ...) {
+vbgamlss <- function(imageframe,
+                     g.formula,
+                     train.data,
+                     g.family=NO,
+                     segmentation=NULL,
+                     segmentation_target=NULL,
+                     num_cores=NULL,
+                     chunk_max_mb=64,
+                     afold=NULL,
+                     subsample=NULL,
+                     debug=F,
+                     logdir=getwd(),
+                     ...) {
 
   # checks
   if (missing(imageframe)) { stop("imageframe is missing")}
@@ -161,6 +187,8 @@ vbgamlss <- function(imageframe, g.formula, train.data, g.family=NO,
 
 
 
+
+### vbgamlss with chunking ###
 #' @export
 vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
                             segmentation=NULL,
@@ -295,9 +323,6 @@ vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
   gc()
   return(structure(models, class = "vbgamlss"))
 }
-
-
-
 
 
 
