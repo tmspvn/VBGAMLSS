@@ -12,7 +12,7 @@
 #
 #
 #
-#' @title Fit Bayesian Generalized Additive Models for Location Scale and Shape (GAMLSS) with Voxel Data
+#' @title Fit Generalized Additive Models for Location Scale and Shape (GAMLSS) with Voxel Data
 #'
 #' @description
 #' The `vbgamlss` function fits Bayesian GAMLSS models on voxel data with optional segmentation,
