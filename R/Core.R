@@ -26,7 +26,7 @@
 #' @param segmentation Optional data frame containing segmentation information.
 #' @param segmentation_target Optional target for the segmentation data to subset the analysis.
 #' @param num_cores Number of cores for parallel processing. If NULL, all available cores are used.
-#' @param chunk_max_mb Maximum chunk size in megabytes for processing. Defaults to 64 MB.
+#' @param chunk_max_mb Maximum chunk size in megabytes for processing. Defaults to 64 MB. Increase to 256/512 for HPC.
 #' @param afold Optional boolean or integer vector to subset imageframe for cross-validation folds.
 #' @param subsample Optional numeric vector specifying indices of columns in imageframe to subset for analysis.
 #' @param debug Logical. If TRUE, enables debug mode to log output in `logdir`. Defaults to FALSE.
@@ -80,7 +80,6 @@ vbgamlss <- function(imageframe,
   # Segmentation if provided
   if (!is.null(segmentation)){
     if (!is.data.frame(segmentation)) {stop("Error: segmentaion must be a data.frame")}
-    segmentation <- images2matrix(segmentation, mask)
     }
   gc()
 

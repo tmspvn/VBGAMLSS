@@ -19,6 +19,7 @@ save_model <- function(model_list, filename, voxel=NULL) {
   if (is.null(voxel)) {
     saveRDS(model_list, file = glue(filename, ".vbgamlss"))
   } else {
+    warning("possibly not wokring as intended!!")
     saveRDS(model_list[[voxel]], file = glue(filename, ".voxel{voxel}.vbgamlss"))
   }
   cat('Saved VBGAMLSS model to:', filename)
@@ -39,22 +40,26 @@ load_model <- function(filepath) {
 #' Predict method for vbgamlss objects
 #'
 #' @param object vbgamlss object to make predictions from.
-#' @param newdata New data to use for predictions.
+#' @param newdata New data to use for predictions. Must be data.frame
 #' @param num_cores Number of CPU cores to use for parallel processing.
 #'   Defaults to one less than the total available cores if not provided.
+#' @param ptype Type of prediction to make: "parameter", "link", "response", "terms". Defaults to "parameter".
 #' @param ... Additional arguments to be passed to the \code{\link{predict}} function.
 #' @return A structure containing predictions.
 #' @export
 predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parameter',
                              segmentation=NULL, segmentation_target=NULL,
-                             mask=NULL, afold=NULL, subsample=NULL,
+                             afold=NULL, subsample=NULL,
                              ...){
   if (missing(object)) { stop("vbgamlss is missing")}
   if (is.null(num_cores)) {num_cores <- availableCores()}
 
-  # prepare segmentation & folds for CV if needed
-  if (!is.null(segmentation)){segmentation <- images2matrix(segmentation, mask)}
-  gc()
+
+  # check segmentation
+  if (!is.null(segmentation)){
+    if (!is.data.frame(segmentation)) {stop("Error: segmentaion must be a data.frame")}
+  }
+
 
   # subset the dataframe if the input is a fold from CV
   #   a fold must be a boolean vector of length of number of subjects (image 4th dim)
@@ -65,6 +70,7 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parame
     segmentation <- segmentation[afold,]
   }
 
+
   # subset the dataframe if a subsampling scheme is provided
   if (!is.null(subsample)){
     if (!is.numeric(subsample)) {
@@ -73,8 +79,11 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parame
     segmentation <- segmentation[,subsample]
   }
 
+
   # compute chunk size
   Nchunks <- estimate_nchunks(object)
+
+
   # predict
   plan(stategy="future::cluster", workers=num_cores)
   future.opt <- list(packages=c('gamlss2', 'gamlss'))
@@ -82,15 +91,24 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parame
   familyobj <- gamlss2:::complete_family(get(fname))
   predictions <- c()
   chunked = as.list(isplitVector(object, chunks=Nchunks))
+
+  # chunks loop
   i = 1
   for (chunk in chunked){
     cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
     i<- i+1
+
+    # parallel call
     subpr <- pbmclapply(seq(length(chunk)),
                         function(i) {
                           vxlgamlss <- chunk[[i]]
+
+                          # process only if properly fitted else NA
                           if ("gamlss2" %in% class(vxlgamlss)) {
+
+                            # recon family object
                             vxlgamlss$family <- familyobj
+
                             # if multi tissue add
                             newdata_ <- newdata
                             if (!is.null(segmentation)){
@@ -99,6 +117,7 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parame
                                 newdata_ <-  newdata_[newdata_$tissue == segmentation_target,]
                               }}
 
+                            # predict
                             l <- as.list(predict(vxlgamlss,
                                                  newdata = newdata_,
                                                  type=ptype,
@@ -121,21 +140,19 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parame
 #' Compute Z-scores for vbgamlss predictions given Y voxel data and image mask.
 #'
 #' @param predictions Predictions from vbgamlss model.
-#' @param yimage R object or filename containing image data.
-#' @param ymask R object or filename containing mask data.
+#' @param yimageframe data.frame object of the response variables to compute z-score of.
 #' @param num_cores Number of CPU cores to use for parallel processing. Defaults to all available cores.
 #' @return A structure containing Z-scores.
 #' @importFrom parallel availableCores
 #' @importFrom parallel mclapply
 #' @export
-zscore.vbgamlss <- function(predictions, yimage, ymask, num_cores=NULL){
+zscore.vbgamlss <- function(predictions, yimageframe, num_cores=NULL){
   if (missing(predictions)) { stop("vbgamlss.predictions is missing")}
-  if (missing(yimage)) { stop("vbgamlss.predictions is missing")}
+  if (missing(yimageframe)) { stop("yimageframe is missing")}
   if (is.null(num_cores)) {num_cores <- availableCores()}
 
-  # 4d to 2D and set a global variable: subjects (4th dim) x voxels (columns)
-  yvoxeldata <- images2matrix(yimage, ymask)
-  gc()
+  if (!is.data.frame(yimageframe)){stop("Error: yimageframe must be a data.frame")}
+
   # parallel function
   do.zscore <- function(obj) {
     pred <- obj$pred

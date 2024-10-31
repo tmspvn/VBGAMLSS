@@ -26,28 +26,34 @@ msk <- '~/mask.nii.gz'  # 90x90x90
 nsubj <- 258
 covs <- data.frame(x = 1:258, x1 = as.factor(rbinom(258, 1, 0.5)), x2 = rnorm(nsubj))  # 258x3
 covs_patients <- data.frame(x = rnorm(nsubj), x1 = rnorm(nsubj)*rnorm(nsubj), x2 = rnorm(nsubj))  # 258x3
+
+# Pre-mask the voxel image and covert to 2d dataframe
 imageframe <- images2matrix(img, msk)
+
+# Fit models voxel/vertex-wise
 models <- vbgamlss(imageframe, # Data.Frame subject x voxels/vertices
                    g.formula = Y ~ pb(x) + x1 | x1,
                    g.family = NO,
                    num_cores = 20,
                    train.data = covs, # 258x3
                    debug = T)
+
+# Save models
 save_model(models, '~/vbgamlss.model/fitted_model')
-models_load <- load_model('~/vbgamlss.model/fitted_model.vbgamlss')
-predictions <- predict.vbgamlss(models_load, newdata = covs_patients, ptype='response')
-zscores <- predict.vbgamlss(predictions, patients_image, mask)
+
+# Load models
+models_loaded <- load_model('~/vbgamlss.model/fitted_model.vbgamlss')
+
+# Predict models response given new data
+predictions <- predict.vbgamlss(models_loaded, newdata = covs_patients, ptype='response')
+
+# Compute Z-scores given new data
+zscores <- predict.vbgamlss(predictions, patients_imageframe)
+
 ```
 
-
-
-To Be Fixed:
-predict.vbgamlss, predict.vbgamlss still uses mask within their code. It needs to be fixed
-
-
-
-
-
+## Bugs
+```vbgamlss.model_selection``` & ```vbgamlss.cv``` are in development and the current implementation is not working.
 
 
 
