@@ -8,7 +8,7 @@
 # fo <- gamlss2:::complete_family('BCPEo')
 # fo$valid.response()
 #
-#
+# TODOs? should save enviroment be added in while logging? even with massive sizes objects?
 #
 #
 #
@@ -55,6 +55,8 @@ vbgamlss <- function(imageframe,
                      subsample=NULL,
                      debug=F,
                      logdir=getwd(),
+                     FID=NULL, # Fit ID
+                     force_ypositivity=T,
                      ...) {
 
   # checks
@@ -122,8 +124,17 @@ vbgamlss <- function(imageframe,
 
   # logdir
   if (debug) {
-    logdir=file.path(logdir, paste0('.voxlog.', rand_names(1, l=3)))
-    dir.create(logdir, recursive = T, showWarnings = F)
+    fid_message = glue("FID : {FID} passed")
+    if (is.null(FID)) {FID = rand_names(1, l=3)} else {cat(fid_message, fill=T)}
+    # path
+    logdir=file.path(logdir, paste0('.voxlog.', FID))
+    # create dir
+    if (dir.exists(logdir)){
+      cat("Existing log dir found, saving and resuming processed chunks if found", fill=T)
+    } else {
+      cat("No log dir found, creating a new one", fill=T)
+      dir.create(logdir, recursive = T, showWarnings = F)
+    }
   }
 
 
@@ -131,11 +142,31 @@ vbgamlss <- function(imageframe,
   i = 1
   models <- list()
   for (ichunk in chunked){
+
+    # Counters, names, etc..
     cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
-    i<- i+1
+    chunk_id = file.path(logdir, paste0('.voxchunk.', i, '.', FID))
+    i <- i+1
+
+
+    # subset with chunk indexes
     voxeldata_chunked <- voxeldata[,ichunk]
     if (!is.null(segmentation)){voxelseg_chunked <- segmentation[,ichunk]}
+
+
+    # set up progress bar
     p <- progressor(ncol(voxeldata_chunked))
+
+
+    # Continue if submodels already computed
+    if (debug){
+      if (file.exists(chunk_id)){
+        cat("Chunk already processed, skipping", fill=T)
+        submodels <- readRDS(chunk_id)
+        models <- c(models, submodels)
+        next
+      }
+    }
 
 
     # parallel call to fit vbgamlss
@@ -156,9 +187,13 @@ vbgamlss <- function(imageframe,
 
       # debug
       if (debug) {logfile=file.path(logdir, paste0('log.vxl', vxlcol))} else {logfile=NULL}
+
       # Y must be strictly non-negative & !=0
-      non_negative = vxl_train_data$Y>0
-      vxl_train_data <- vxl_train_data[non_negative,]
+      if (force_ypositivity){
+        non_negative = vxl_train_data$Y>0
+        vxl_train_data <- vxl_train_data[non_negative,]
+      }
+
       # gamlss
       g <- TRY(gamlss2::gamlss2(formula=as.formula(g.formula),
                                 data=vxl_train_data,
@@ -170,12 +205,18 @@ vbgamlss <- function(imageframe,
                                 ...),
                logfile, save.env.and.stop=F)
       g$control <- NULL
-      g$family <- g$family$family # re-set via gamlss2:::complete_family()
+      g$family <- g$family$family # to re-set via gamlss2:::complete_family()
       g$vxl <- vxlcol
-      p() # update progressbar
+      p() # update progress bar
       list(g)
     }
 
+
+    # Save chunk
+    if (debug){saveRDS(submodels, chunk_id)}
+
+
+    # Append results to models
     models <- c(models, submodels)
 
   }
