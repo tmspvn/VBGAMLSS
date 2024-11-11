@@ -132,7 +132,7 @@ vbgamlss <- function(imageframe,
     if (dir.exists(cachedir)){
       # is already a cache dir?
       if ('.voxchunk.1' %in% list.files(cachedir, all.files = T)){
-        cat('Cache directory found.', fill=T)
+        cat('Cache directory found', fill=T)
       } else {
         # make a new folder to store cache in the cachedir
         cachedir=file.path(cachedir, paste0('.voxcache.', rand_names(1, l=4)))
@@ -140,7 +140,7 @@ vbgamlss <- function(imageframe,
         cat(paste0('Cache directory: ', cachedir), fill=T)
       }
     } else {
-      stop('ERROR: provide a proper path for the cachedir.')
+      stop('ERROR: provide a proper/existing path for the cachedir.')
     }
     # force debugging while in cache mode
     debug <- T
