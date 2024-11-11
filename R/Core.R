@@ -55,7 +55,8 @@ vbgamlss <- function(imageframe,
                      subsample=NULL,
                      debug=F, # toggle debugging
                      logdir=getwd(), # debug directory
-                     chace=F, # save temporary states and force debug=T
+                     cache=F, # save temporary states and force debug=T
+                     cachedir=getwd(), # debug directory
                      force_ypositivity=T, # force Y >0
                      ...) {
 
@@ -75,7 +76,9 @@ vbgamlss <- function(imageframe,
 
 
   # Input image: subjects (4th dim) x voxels (columns)
-  if (!is.data.frame(imageframe)) {stop("Error: imageframe must be a data.frame")}
+  if (!is.data.frame(imageframe)) {
+    stop("Error: imageframe must be a data.frame! Use images2matrix(image, mask) to convert image to matrix.")
+    }
   voxeldata <- imageframe
 
 
@@ -122,19 +125,33 @@ vbgamlss <- function(imageframe,
   chunked = as.list(isplitIndices(ncol(voxeldata), chunks=Nchunks))
 
 
-  # logdir
-  if (cache) {debug = T} # force debugging while caching
-  if (debug) {
-    FID = rand_names(1, l=3)
-    # path
-    logdir=file.path(logdir, paste0('.voxlog.', FID))
-    # create dir
-    if (dir.exists(logdir)){
-      cat("Existing log dir found, saving and resuming processed chunks if found", fill=T)
+  # cache dir
+  if (cache) {
+    cat(paste0('Caching'), fill=T)
+    # exist?
+    if (dir.exists(cachedir)){
+      # is already a cache dir?
+      if ('.voxchunk.1' %in% list.files(cachedir, all.files = T)){
+        cat('Cache directory found.', fill=T)
+      } else {
+        # make a new folder to store cache in the cachedir
+        cachedir=file.path(cachedir, paste0('.voxcache.', rand_names(1, l=4)))
+        dir.create(cachedir, recursive = T, showWarnings = F)
+        cat(paste0('Cache directory: ', cachedir), fill=T)
+      }
     } else {
-      cat("No log dir found, creating a new one", fill=T)
-      dir.create(logdir, recursive = T, showWarnings = F)
+      stop('ERROR: provide a proper path for the cachedir.')
     }
+    # force debugging while in cache mode
+    debug <- T
+    logdir <- cachedir
+    }
+
+
+  # log dir
+  if (debug) {
+    logdir=file.path(logdir, paste0('.voxlog.', rand_names(1, l=4)))
+    dir.create(logdir, recursive = T, showWarnings = F)
   }
 
 
@@ -145,7 +162,7 @@ vbgamlss <- function(imageframe,
 
     # Counters, names, etc..
     cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
-    chunk_id = file.path(logdir, paste0('.voxchunk.', i,))
+    chunk_id = file.path(cachedir, paste0('.voxchunk.', i))
     i <- i+1
 
 
@@ -157,11 +174,10 @@ vbgamlss <- function(imageframe,
     # set up progress bar
     p <- progressor(ncol(voxeldata_chunked))
 
-
-    # Continue if submodels already computed
+    # Check cache, continue if submodels already computed
     if (cache){
       if (file.exists(chunk_id)){
-        cat("Chunk already processed, skipping", fill=T)
+        cat("Chunk already processed, skipped", fill=T)
         submodels <- readRDS(chunk_id)
         models <- c(models, submodels)
         next
@@ -187,6 +203,7 @@ vbgamlss <- function(imageframe,
 
       # debug
       if (debug) {logfile=file.path(logdir, paste0('log.vxl', vxlcol))} else {logfile=NULL}
+
 
       # force Y to be strictly non-negative & !=0
       if (force_ypositivity){
