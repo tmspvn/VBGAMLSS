@@ -53,10 +53,10 @@ vbgamlss <- function(imageframe,
                      chunk_max_mb=64,
                      afold=NULL,
                      subsample=NULL,
-                     debug=F,
-                     logdir=getwd(),
-                     FID=NULL, # Fit ID
-                     force_ypositivity=T,
+                     debug=F, # toggle debugging
+                     logdir=getwd(), # debug directory
+                     chace=F, # save temporary states and force debug=T
+                     force_ypositivity=T, # force Y >0
                      ...) {
 
   # checks
@@ -123,9 +123,9 @@ vbgamlss <- function(imageframe,
 
 
   # logdir
+  if (cache) {debug = T} # force debugging while caching
   if (debug) {
-    fid_message = glue("FID : {FID} passed")
-    if (is.null(FID)) {FID = rand_names(1, l=3)} else {cat(fid_message, fill=T)}
+    FID = rand_names(1, l=3)
     # path
     logdir=file.path(logdir, paste0('.voxlog.', FID))
     # create dir
@@ -145,7 +145,7 @@ vbgamlss <- function(imageframe,
 
     # Counters, names, etc..
     cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
-    chunk_id = file.path(logdir, paste0('.voxchunk.', i, '.', FID))
+    chunk_id = file.path(logdir, paste0('.voxchunk.', i,))
     i <- i+1
 
 
@@ -159,7 +159,7 @@ vbgamlss <- function(imageframe,
 
 
     # Continue if submodels already computed
-    if (debug){
+    if (cache){
       if (file.exists(chunk_id)){
         cat("Chunk already processed, skipping", fill=T)
         submodels <- readRDS(chunk_id)
@@ -188,7 +188,7 @@ vbgamlss <- function(imageframe,
       # debug
       if (debug) {logfile=file.path(logdir, paste0('log.vxl', vxlcol))} else {logfile=NULL}
 
-      # Y must be strictly non-negative & !=0
+      # force Y to be strictly non-negative & !=0
       if (force_ypositivity){
         non_negative = vxl_train_data$Y>0
         vxl_train_data <- vxl_train_data[non_negative,]
@@ -213,7 +213,7 @@ vbgamlss <- function(imageframe,
 
 
     # Save chunk
-    if (debug){saveRDS(submodels, chunk_id)}
+    if (cache){saveRDS(submodels, chunk_id)}
 
 
     # Append results to models
