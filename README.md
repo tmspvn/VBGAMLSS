@@ -45,7 +45,7 @@ save_model(models, '~/vbgamlss.model/fitted_model')
 models_loaded <- load_model('~/vbgamlss.model/fitted_model.vbgamlss')
 
 # Predict models response given new data
-predictions <- predict.vbgamlss(models_loaded, newdata = covs_patients, ptype='response')
+predictions <- predict.vbgamlss(models_loaded, newdata = covs_patients)
 
 # Compute Z-scores given new data
 zscores <- zscore.vbgamlss(predictions, patients_imageframe)

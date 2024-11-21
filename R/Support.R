@@ -175,18 +175,18 @@ zscore.vbgamlss <- function(predictions, yimageframe, num_cores=NULL){
   }
 
   # compute chunk size
-  Nchunks <- estimate_nchunks(yvoxeldata)
+  Nchunks <- estimate_nchunks(yimageframe)
   # parallel call
   zscores = c()
-  chunked = as.list(isplitIndices(ncol(yvoxeldata), chunks=Nchunks))
+  chunked = as.list(isplitIndices(ncol(yimageframe), chunks=Nchunks))
   i = 1
   for (ichunk in chunked){
     cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
     i<- i+1
-    # chunk yvoxeldata and predictions
+    # chunk yimageframe and predictions
     iterable_chunk <- mapply(list,
                              pred = predictions[ichunk],
-                             yvxldat = yvoxeldata[,ichunk],
+                             yvxldat = yimageframe[,ichunk],
                              SIMPLIFY=F)
     # compute z-scores
     subzs <- pbmclapply(iterable_chunk,
@@ -200,13 +200,63 @@ zscore.vbgamlss <- function(predictions, yimageframe, num_cores=NULL){
 
 
 
+#' Compute Z-scores from parameter maps and original images.
+#' @export
+zscore.map.vbgamlss <- function(yimage,
+                                mask,
+                                family='SHASH',
+                                mu_hat,
+                                sigma_hat=NULL,
+                                nu_hat=NULL,
+                                tau_hat=NULL,
+                                num_cores=NULL){
+  if (is.null(num_cores)) {num_cores <- availableCores()}
+
+  # make df
+  frame = do.call(rbind,
+                  list(y = images2matrix( yimage, mask),
+                       mu = images2matrix( mu_hat, mask),
+                       sigma = images2matrix( sigma_hat, mask),
+                       nu = images2matrix( nu_hat, mask),
+                       tau = images2matrix( tau_hat, mask)
+                  ))
+  frame <- as.data.frame(t(frame))
+
+  # parallel function
+  do.zscore <- function(i) {
+    # get number of params
+    lpar <- sum(names(frame) %in% c("mu", "sigma", "nu", "tau"))
+    yval <- frame[i, 'y']
+    pred <- frame[i, ]
+
+    qfun <- paste("p", family, sep="")
+    if (lpar == 1) {
+      newcall <- call(qfun, yval, mu = pred$mu)
+    } else if (lpar == 2) {
+      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma)
+    } else if (lpar == 3) {
+      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma, nu = pred$nu)
+    } else {
+      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma, nu = pred$nu, tau = pred$tau)
+    }
+    cdf <- eval(newcall)
+    rqres <- qnorm(cdf)
+    return(rqres)
+  }
+
+  # compute z-scores
+  subzs <- pbmclapply(1:dim(frame)[1],
+                      do.zscore,
+                      mc.cores=num_cores)
+  zmap <- matrixToImages(matrix(unlist(subzs), nrow = 1), antsImageRead(mask,3))
+  return(zmap[[1]])
+}
 
 
 
-
-# ========== #
-# DEPRECATED #
-# ========== #
+############################## ========== ######################################
+                             # DEPRECATED #
+############################## ========== ######################################
 
 
 #' @export
