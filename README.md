@@ -53,7 +53,7 @@ zscores <- zscore.vbgamlss(predictions, patients_imageframe)
 ```
 
 ## Bugs
-```vbgamlss.model_selection``` & ```vbgamlss.cv``` are in development and the current implementation is not working.
+```vbgamlss.model_selection``` & ```vbgamlss.cv``` are in development and the current implementation is not fully tested.
 
 
 
