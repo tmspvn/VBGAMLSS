@@ -11,14 +11,21 @@ pbmcapply,
 progressr,
 tibble
 ```
+
+
+
 #### install gamlss2 & ANTsR
 ```
 install.packages("gamlss2", repos = c("https://gamlss-dev.R-universe.dev", "https://cloud.R-project.org"))
 devtools::install_github('ANTsX/ANTsR')
 ```
 
+#### then install VBGAMLSS
+```
+devtools::install_github("tmspvn/VBGAMLSS", dependencies = TRUE)
+```
+
 # Example 
-devtools::install_github("tmspvn/VBGAMLSS")
 
 ```
 set.seed(1)
@@ -53,8 +60,9 @@ zscores <- zscore.vbgamlss(predictions, patients_imageframe)
 
 ```
 
-## Bugs
+## Known bugs and notes
 ```vbgamlss.model_selection``` & ```vbgamlss.cv``` are in development and the current implementation is not fully tested.
+The same is true for the segmentation handling.
 
 
 
