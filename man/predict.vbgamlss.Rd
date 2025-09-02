@@ -4,17 +4,37 @@
 \alias{predict.vbgamlss}
 \title{Predict method for vbgamlss objects}
 \usage{
-\method{predict}{vbgamlss}(object, newdata = NULL, num_cores = NULL, ...)
+\method{predict}{vbgamlss}(
+  object,
+  newdata = NULL,
+  num_cores = NULL,
+  ptype = "parameter",
+  segmentation = NULL,
+  segmentation_target = NULL,
+  afold = NULL,
+  subsample = NULL,
+  ...
+)
 }
 \arguments{
 \item{object}{vbgamlss object to make predictions from.}
 
-\item{newdata}{New data to use for predictions.}
+\item{newdata}{New data to use for predictions. Must be data.frame}
 
 \item{num_cores}{Number of CPU cores to use for parallel processing.
 Defaults to one less than the total available cores if not provided.}
 
-\item{...}{Additional arguments to be passed to the \code{\link{predict}} function.}
+\item{ptype}{Type of prediction to make: "parameter", "link", "response", "terms". Defaults to "parameter".}
+
+\item{segmentation}{Optional image/path with region labels.}
+
+\item{segmentation_target}{Optional. Integer to evaluate (eg 1).}
+
+\item{afold}{Optional. Integer, fold index when predicting CV folds (for internal use).}
+
+\item{subsample}{Optional integer vector of subject indices to predict.}
+
+\item{...}{Additional arguments passed to the predict.gamlss2 function.}
 }
 \value{
 A structure containing predictions.

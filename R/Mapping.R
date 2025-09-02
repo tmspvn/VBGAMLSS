@@ -5,7 +5,17 @@
 
 
 
-
+#' Write coefficient maps to NIfTI files
+#'
+#' Convert per-voxel model coefficients from a fitted \code{vbgamlss} object
+#' into coefficient images, one image per coefficient, and save them to disk.
+#'
+#' @param fittedobj A fitted object of class \code{"vbgamlss"} produced by voxel-wise fitting. Each element must contain a \code{$coefficients} vector with identical names and length across voxels.
+#' @param mask An ANTs image (or path) defining the analysis mask that encodes image geometry for mapping matrices back to images.
+#' @param filename Character prefix for output files. The function appends \code{"_par-<PAR>_coef-(<TERM>).nii.gz"} for each coefficient.
+#' @param return_files Logical, if \code{TRUE} return the vector of file paths, otherwise return \code{invisible(NULL)}. Default \code{FALSE}.
+#' @return If \code{return_files = TRUE}, a character vector of output paths. Files are written in NIfTI format.
+#' @importFrom ANTsRCore antsImageRead antsImageWrite
 #' @export
 map_model_coefficients <- function(fittedobj, mask, filename, return_files=FALSE){
   if (class(fittedobj) != "vbgamlss") { stop("fittedobj must be of class vbgamlss.")}
@@ -34,6 +44,18 @@ map_model_coefficients <- function(fittedobj, mask, filename, return_files=FALSE
   if (return_files) {return(fnames)}
 }
 
+
+
+#' Write prediction maps to NIfTI files
+#'
+#' Convert per-voxel predicted parameter values from a \code{vbgamlss.predictions} object into images and save them to disk.
+#'
+#' @param obj A \code{"vbgamlss.predictions"} object. Each voxel entry should  contain \code{$family}, optional \code{$vxl}, and one element per modelparameter (for example \code{mu}, \code{sigma}), each being a numeric vector over subjects with consistent ordering across voxels.
+#' @param mask An ANTs image (or path) providing geometry, used to map matrices back to images.
+#' @param filename Character prefix for output files. The function appends \code{"_subj-<ID>_fam-<FAMILY>_par-<PARAM>.nii.gz"}.
+#' @param index Optional integer vector of subject indices to map. If \code{NULL} all subjects are processed.
+#' @param return_files Logical, if \code{TRUE} return the vector of file paths written for the last parameter processed. Default \code{FALSE}.
+#' @importFrom ANTsRCore antsImageRead antsImageWrite
 #' @export
 map_model_predictions <- function(obj, mask, filename, index=NULL,
                                   return_files=FALSE){
@@ -77,6 +99,19 @@ map_model_predictions <- function(obj, mask, filename, index=NULL,
   if (return_files) {return(fnames)}
 }
 
+
+
+#' Write voxel-wise z-score maps to NIfTI files
+#'
+#' Convert per-voxel z-scores stored in a \code{"vbgamlss.zscores"} object into images and save one NIfTI file per subject.
+#'
+#' @param zscores A \code{"vbgamlss.zscores"} object. Each list element corresponds to a voxel and contains a numeric vector of z-scores over subjects (consistent ordering across voxels).
+#' @param mask ANTs image (or path) providing geometry for mapping matrices back to images.
+#' @param filename Character prefix for output files. The function appends \code{"_subj-<ID>.zscore.nii.gz"}.
+#' @param index Optional integer vector of subject indices to export. If \code{NULL} (default), all subjects are exported.
+#' @param return_files Logical, if \code{TRUE} return the vector of written file paths. Default \code{FALSE}.
+#' @import ANTsRCore
+#' @importFrom ANTsRCore antsImageRead antsImageWrite
 #' @export
 map_zscores <- function(zscores, mask, filename, index=NULL,
                         return_files=FALSE){

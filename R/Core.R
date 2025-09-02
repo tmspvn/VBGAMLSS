@@ -31,6 +31,9 @@
 #' @param subsample Optional numeric vector specifying indices of columns in imageframe to subset for analysis.
 #' @param debug Logical. If TRUE, enables debug mode to log output in `logdir`. Defaults to FALSE.
 #' @param logdir Directory path for saving logs if `debug` is TRUE. Defaults to current working directory.
+#' @param cache Logical, cache intermediate results.
+#' @param cachedir Character path for cached artifacts.
+#' @param force_ypositivity Logical, shift/clip y to be positive if the family requires it.
 #' @param ... Additional arguments passed to the GAMLSS fitting function.
 #'
 #' @return A list of GAMLSS models, with class `"vbgamlss"`.
@@ -245,141 +248,43 @@ vbgamlss <- function(imageframe,
 
 
 
-### vbgamlss with chunking ###
-#' @export
-vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
-                            segmentation=NULL,
-                            segmentation_target=NULL,
-                            num_cores=NULL,
-                            chunk_max_mb=64,
-                            afold=NULL,
-                            subsample=NULL,
-                            debug=F,
-                            logdir=getwd(),
-                            ...) {
-
-  # checks
-  if (missing(image)) { stop("image is missing")}
-  if (missing(mask)) { stop("mask is missing")}
-  if (missing(g.formula)) { stop("formula is missing")}
-  check_formula_LHS(g.formula)
-  if (missing(train.data)) { stop("subjData is missing")}
-
-
-  # Force character columns to factors
-  train.data <- as.data.frame(unclass(train.data), stringsAsFactors=TRUE)
-
-
-  # Cores
-  if (is.null(num_cores)) {num_cores <- availableCores()}
-
-
-  # 4d to 2D and set a global variable: subjects (4th dim) x voxels (columns)
-  voxeldata <- load_input_image(image, mask)
-  # load segmentation if provided
-  if (!is.null(segmentation)){segmentation <- images2matrix(segmentation, mask)}
-  gc()
 
 
 
-  # subset the dataframe if the input is a fold from CV
-  #   a fold must be a boolean vector of length of number of subjects (image 4th dim)
-  if (!is.null(afold)){
-    if (!is.logical(afold) && !is.integer(afold)) {
-      stop("Error: afold must be either logical or integer vector.")
-    }
-    voxeldata <- voxeldata[afold,]
-    segmentation <- segmentation[afold,]
-    train.data <- train.data[afold,]
-  }
 
 
-  # subset the dataframe if a subsampling scheme is provided
-  if (!is.null(subsample)){
-    if (!is.numeric(subsample)) {
-      stop("Error: subsample must be a numeric vector of indeces of length sum(mask>0).")
-    }
-    voxeldata <- voxeldata[,subsample]
-    segmentation <- segmentation[,subsample]
-  }
 
 
-  # parallel settings
-  plan(stategy="future::cluster", workers=num_cores, rscript_libs=.libPaths())
-  options(future.globals.maxSize=20000*1024^2)
-  handlers(global = TRUE)
-  handlers("pbmcapply")
-  p <- with_progress(progressor(ncol(voxeldata)))
-  future.opt <- list(packages=c('gamlss2'), seed = TRUE)
 
 
-  # compute chunk size
-  Nchunks <- estimate_nchunks(voxeldata, chunk_max_Mb=chunk_max_mb)
-  chunked = as.list(isplitIndices(ncol(voxeldata), chunks=Nchunks))
 
 
-  # logdir
-  if (debug) {
-    logdir=file.path(logdir, paste0('.voxlog.', rand_names(1, l=3)))
-    dir.create(logdir, recursive = T, showWarnings = F)
-    }
 
 
-  # loop chunks call
-  i = 1
-  models <- list()
-  for (ichunk in chunked){
-    cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
-    i<- i+1
-    voxeldata_chunked <- voxeldata[,ichunk]
-    if (!is.null(segmentation)){voxelseg_chunked <- segmentation[,ichunk]}
-    p <- progressor(ncol(voxeldata_chunked))
 
 
-    # parallel call to fit vbgamlss
-    submodels <- foreach(vxlcol = seq_along(voxeldata_chunked),
-                         .options.future = future.opt,
-                         .combine=c
-    ) %dofuture% {
-      # fit specific voxel
-      vxl_train_data <- train.data
-      vxl_train_data$Y <- as.numeric(voxeldata_chunked[,vxlcol])
-      # if multi tissue add
-      if (!is.null(segmentation)){
-        vxl_train_data$tissue <- voxelseg_chunked[,vxlcol]}
-        if (! is.null(segmentation_target)){
-          vxl_train_data <- vxl_train_data[vxl_train_data$tissue == segmentation_target,]
-        }
 
 
-      # debug
-      if (debug) {logfile=file.path(logdir, paste0('log.vxl', vxlcol))} else {logfile=NULL}
-      # Y must be strictly non-negative & !=0
-      non_negative = vxl_train_data$Y>0
-      vxl_train_data <- vxl_train_data[non_negative,]
-      # gamlss
-      g <- TRY(gamlss2::gamlss2(formula=as.formula(g.formula),
-                         data=vxl_train_data,
-                         family=g.family,
-                         light=TRUE,
-                         trace=FALSE,
-                         CG = 100,
-                         maxit = c(300, 30),
-                         ...),
-            logfile, save.env.and.stop=F)
-      g$control <- NULL
-      g$family <- g$family$family # re-set via gamlss2:::complete_family()
-      g$vxl <- vxlcol
-      p() # update progressbar
-      list(g)
-    }
 
-    models <- c(models, submodels)
 
-  }
-  gc()
-  return(structure(models, class = "vbgamlss"))
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -389,6 +294,150 @@ vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
 # ========== #
 # DEPRECATED #
 # ========== #
+
+#'
+#' ### vbgamlss with chunking ###
+#' #' @export
+#' vbgamlss_chunks <- function(image, mask, g.formula, train.data, g.family=NO,
+#'                             segmentation=NULL,
+#'                             segmentation_target=NULL,
+#'                             num_cores=NULL,
+#'                             chunk_max_mb=64,
+#'                             afold=NULL,
+#'                             subsample=NULL,
+#'                             debug=F,
+#'                             logdir=getwd(),
+#'                             ...) {
+#'
+#'   # checks
+#'   if (missing(image)) { stop("image is missing")}
+#'   if (missing(mask)) { stop("mask is missing")}
+#'   if (missing(g.formula)) { stop("formula is missing")}
+#'   check_formula_LHS(g.formula)
+#'   if (missing(train.data)) { stop("subjData is missing")}
+#'
+#'
+#'   # Force character columns to factors
+#'   train.data <- as.data.frame(unclass(train.data), stringsAsFactors=TRUE)
+#'
+#'
+#'   # Cores
+#'   if (is.null(num_cores)) {num_cores <- availableCores()}
+#'
+#'
+#'   # 4d to 2D and set a global variable: subjects (4th dim) x voxels (columns)
+#'   voxeldata <- load_input_image(image, mask)
+#'   # load segmentation if provided
+#'   if (!is.null(segmentation)){segmentation <- images2matrix(segmentation, mask)}
+#'   gc()
+#'
+#'
+#'
+#'   # subset the dataframe if the input is a fold from CV
+#'   #   a fold must be a boolean vector of length of number of subjects (image 4th dim)
+#'   if (!is.null(afold)){
+#'     if (!is.logical(afold) && !is.integer(afold)) {
+#'       stop("Error: afold must be either logical or integer vector.")
+#'     }
+#'     voxeldata <- voxeldata[afold,]
+#'     segmentation <- segmentation[afold,]
+#'     train.data <- train.data[afold,]
+#'   }
+#'
+#'
+#'   # subset the dataframe if a subsampling scheme is provided
+#'   if (!is.null(subsample)){
+#'     if (!is.numeric(subsample)) {
+#'       stop("Error: subsample must be a numeric vector of indeces of length sum(mask>0).")
+#'     }
+#'     voxeldata <- voxeldata[,subsample]
+#'     segmentation <- segmentation[,subsample]
+#'   }
+#'
+#'
+#'   # parallel settings
+#'   plan(stategy="future::cluster", workers=num_cores, rscript_libs=.libPaths())
+#'   options(future.globals.maxSize=20000*1024^2)
+#'   handlers(global = TRUE)
+#'   handlers("pbmcapply")
+#'   p <- with_progress(progressor(ncol(voxeldata)))
+#'   future.opt <- list(packages=c('gamlss2'), seed = TRUE)
+#'
+#'
+#'   # compute chunk size
+#'   Nchunks <- estimate_nchunks(voxeldata, chunk_max_Mb=chunk_max_mb)
+#'   chunked = as.list(isplitIndices(ncol(voxeldata), chunks=Nchunks))
+#'
+#'
+#'   # logdir
+#'   if (debug) {
+#'     logdir=file.path(logdir, paste0('.voxlog.', rand_names(1, l=3)))
+#'     dir.create(logdir, recursive = T, showWarnings = F)
+#'     }
+#'
+#'
+#'   # loop chunks call
+#'   i = 1
+#'   models <- list()
+#'   for (ichunk in chunked){
+#'     cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
+#'     i<- i+1
+#'     voxeldata_chunked <- voxeldata[,ichunk]
+#'     if (!is.null(segmentation)){voxelseg_chunked <- segmentation[,ichunk]}
+#'     p <- progressor(ncol(voxeldata_chunked))
+#'
+#'
+#'     # parallel call to fit vbgamlss
+#'     submodels <- foreach(vxlcol = seq_along(voxeldata_chunked),
+#'                          .options.future = future.opt,
+#'                          .combine=c
+#'     ) %dofuture% {
+#'       # fit specific voxel
+#'       vxl_train_data <- train.data
+#'       vxl_train_data$Y <- as.numeric(voxeldata_chunked[,vxlcol])
+#'       # if multi tissue add
+#'       if (!is.null(segmentation)){
+#'         vxl_train_data$tissue <- voxelseg_chunked[,vxlcol]}
+#'         if (! is.null(segmentation_target)){
+#'           vxl_train_data <- vxl_train_data[vxl_train_data$tissue == segmentation_target,]
+#'         }
+#'
+#'
+#'       # debug
+#'       if (debug) {logfile=file.path(logdir, paste0('log.vxl', vxlcol))} else {logfile=NULL}
+#'       # Y must be strictly non-negative & !=0
+#'       non_negative = vxl_train_data$Y>0
+#'       vxl_train_data <- vxl_train_data[non_negative,]
+#'       # gamlss
+#'       g <- TRY(gamlss2::gamlss2(formula=as.formula(g.formula),
+#'                          data=vxl_train_data,
+#'                          family=g.family,
+#'                          light=TRUE,
+#'                          trace=FALSE,
+#'                          CG = 100,
+#'                          maxit = c(300, 30),
+#'                          ...),
+#'             logfile, save.env.and.stop=F)
+#'       g$control <- NULL
+#'       g$family <- g$family$family # re-set via gamlss2:::complete_family()
+#'       g$vxl <- vxlcol
+#'       p() # update progressbar
+#'       list(g)
+#'     }
+#'
+#'     models <- c(models, submodels)
+#'
+#'   }
+#'   gc()
+#'   return(structure(models, class = "vbgamlss"))
+#' }
+#'
+
+
+
+
+
+
 
 ### vbgamlss all loaded in mem ###
 #

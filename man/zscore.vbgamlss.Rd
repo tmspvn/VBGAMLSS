@@ -4,14 +4,12 @@
 \alias{zscore.vbgamlss}
 \title{Compute Z-scores for vbgamlss predictions given Y voxel data and image mask.}
 \usage{
-zscore.vbgamlss(predictions, yimage, ymask, num_cores = NULL)
+zscore.vbgamlss(predictions, yimageframe, num_cores = NULL)
 }
 \arguments{
 \item{predictions}{Predictions from vbgamlss model.}
 
-\item{yimage}{R object or filename containing image data.}
-
-\item{ymask}{R object or filename containing mask data.}
+\item{yimageframe}{data.frame object of the response variables to compute z-score of.}
 
 \item{num_cores}{Number of CPU cores to use for parallel processing. Defaults to all available cores.}
 }

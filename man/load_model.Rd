@@ -4,13 +4,10 @@
 \alias{load_model}
 \title{Load VBGAMLSS models from files with the specified prefix.}
 \usage{
-load_model(file_prefix, num_cores = NULL)
+load_model(filepath)
 }
 \arguments{
-\item{file_prefix}{Prefix of the files containing the VBGAMLSS models.}
-
-\item{num_cores}{Number of CPU cores to use for parallel processing.
-Defaults to all available cores if not provided.}
+\item{filepath}{path to serialized model.}
 }
 \value{
 A structure containing the loaded VBGAMLSS models.

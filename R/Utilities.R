@@ -7,74 +7,14 @@
 
 
 
-#' Check input data
-#'
-#' @param input image to check
-#' @return mask input
-#' @export
-load_input_image <- function(image, mask=NULL){
-  if (missing(image)) { stop("image is missing")}
-  # check image input format
-  if (is.character(image)){
-    # check if file exist
-    if (!file.exists(image)) {stop("Image file does not exist.")}
-
-    # try load rds?
-    is_rds <- tryCatch({
-              voxeldata <- readRDS(image)
-              cat("loading RDS file, mask is ignored.")
-              TRUE
-            }, error = function(e){F})
-
-    # if not red try load nifti?
-    if (!is_rds){
-      if (is.null(mask)) { stop("mask must be specified if image is a path to .nii")}
-      tryCatch({
-        voxeldata <- images2matrix(image, mask)
-      }, error = function(e){
-        cat('Error: ', e$call, '\n')
-        cat('Error: ', e$message, '\n')
-        stop("Image input must be a *path* to a RDS, nifti *or* a data frame object.")
-      })
-    }
-
-    # if not a character, try load data frame
-  } else {
-    if (is.data.frame(image)){
-      voxeldata <- image
-      warning("Data.frame passed, mask is ignored.")
-      } else{
-      stop("Image input must be a *path* to a RDS, nifti *or* a data frame object.")
-    }
-  }
-  return(voxeldata)
-}
-
-
 #' Estimate number of chunks based on object size
 #'
-#' @param object R object for chunk size estimation.
-#' @return Estimated number of chunks with max 256MB per job.
-#' @examples estimate_nchunks(data)
-#' @export
-estimate_nchunks <- function(object, from_files=F, chunk_max_Mb=256) {
-  # compute chunk size of max 256 mb per job
-  if (! from_files){
-    memory_size_mb <- object.size(object) / (1024^2)
-    Nchunks <- ceiling(memory_size_mb / chunk_max_Mb)
-  } else {
-    memory_size_mb <- file.info(object)$size / (1024^2)
-    Nchunks <- ceiling(memory_size_mb / chunk_max_Mb)
-  }
-  return(Nchunks)
-}
-
-
-
+#' @param image_list list containing image paths.
+#' @param mask mask image paths.
+#' @return Returns matrix of dimension (numImages, numVoxelsInMask)
 #' @export
 images2matrix <- function(image_list, mask) {
-  # imageList is a list containing images.  Mask is a mask image Returns matrix of
-  # dimension (numImages, numVoxelsInMask)
+
   if (missing(image_list)) { stop("image_list is missing")}
   if (missing(mask)) { stop("mask is missing")}
   # load mask
@@ -105,8 +45,67 @@ images2matrix <- function(image_list, mask) {
 
 
 
-
+#' Check input data
+#'
+#' @param image path of the image to load and check. RDS, nifti or dataframe
+#' @param mask  path to mask.
+#' @return image as a dataframe.
 #' @export
+load_input_image <- function(image, mask=NULL){
+  if (missing(image)) { stop("image is missing")}
+  # check image input format
+  if (is.character(image)){
+    # check if file exist
+    if (!file.exists(image)) {stop("Image file does not exist.")}
+
+    # try load rds?
+    is_rds <- tryCatch({
+              voxeldata <- readRDS(image)
+              cat("loading RDS file, mask is ignored.")
+              TRUE
+            }, error = function(e){F})
+
+    # if not rds try load nifti?
+    if (!is_rds){
+      if (is.null(mask)) { stop("mask must be specified if image is a path to .nii")}
+      tryCatch({
+        voxeldata <- images2matrix(image, mask)
+      }, error = function(e){
+        cat('Error: ', e$call, '\n')
+        cat('Error: ', e$message, '\n')
+        stop("Image input must be a *path* to a RDS, nifti *or* a data frame object.")
+      })
+    }
+
+    # if not a character, try load data frame
+  } else {
+    if (is.data.frame(image)){
+      voxeldata <- image
+      warning("Data.frame passed, mask is ignored.")
+      } else{
+      stop("Image input must be a *path* to a RDS, nifti *or* a data frame object.")
+    }
+  }
+  return(voxeldata)
+}
+
+
+########### NOT EXPORTED ###########
+
+estimate_nchunks <- function(object, from_files=F, chunk_max_Mb=256) {
+  # compute chunk size of max 256 mb per job
+  if (! from_files){
+    memory_size_mb <- object.size(object) / (1024^2)
+    Nchunks <- ceiling(memory_size_mb / chunk_max_Mb)
+  } else {
+    memory_size_mb <- file.info(object)$size / (1024^2)
+    Nchunks <- ceiling(memory_size_mb / chunk_max_Mb)
+  }
+  return(Nchunks)
+}
+
+
+
 get_subsample_indices <- function(len, sampling_type, factor) {
 if (!is.numeric(factor) && factor>0 && factor<=1) {
       stop("Error: factor (or subsample) must be numeric between (0, 1]")
@@ -140,7 +139,7 @@ if (!is.numeric(factor) && factor>0 && factor<=1) {
 
 
 
-#' @export
+
 combine_formulas_gamlss2 <- function(mu_list, sigma_list,
                                      nu_list, tau_list,
                                      families=NULL) {

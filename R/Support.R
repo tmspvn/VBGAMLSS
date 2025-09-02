@@ -44,7 +44,11 @@ load_model <- function(filepath) {
 #' @param num_cores Number of CPU cores to use for parallel processing.
 #'   Defaults to one less than the total available cores if not provided.
 #' @param ptype Type of prediction to make: "parameter", "link", "response", "terms". Defaults to "parameter".
-#' @param ... Additional arguments to be passed to the \code{\link{predict}} function.
+#' @param segmentation Optional image/path with region labels.
+#' @param segmentation_target Optional. Integer to evaluate (eg 1).
+#' @param afold Optional. Integer, fold index when predicting CV folds (for internal use).
+#' @param subsample Optional integer vector of subject indices to predict.
+#' @param ... Additional arguments passed to the predict.gamlss2 function.
 #' @return A structure containing predictions.
 #' @export
 predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parameter',
@@ -143,8 +147,6 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parame
 #' @param yimageframe data.frame object of the response variables to compute z-score of.
 #' @param num_cores Number of CPU cores to use for parallel processing. Defaults to all available cores.
 #' @return A structure containing Z-scores.
-#' @importFrom parallel availableCores
-#' @importFrom parallel mclapply
 #' @export
 zscore.vbgamlss <- function(predictions, yimageframe, num_cores=NULL){
   if (missing(predictions)) { stop("vbgamlss.predictions is missing")}
@@ -200,7 +202,16 @@ zscore.vbgamlss <- function(predictions, yimageframe, num_cores=NULL){
 
 
 
-#' Compute Z-scores from parameter maps and original images.
+#' Compute voxel-wise Z-scores from VBGAMLSS coefficients maps
+#'
+#' Given a subject image and predicted parameter maps for a GAMLSS family, compute zscore at each voxel inside a mask and return a z-score image.
+#'
+#' @param yimage A NIFTI image (or path readable by \code{antsImageRead}) containing the observed data to score.
+#' @param mask An NIFTI image (or path) defining voxels to evaluate (nonzero entries are used).
+#' @param family Character scalar naming a \pkg{gamlss.dist} family with an available CDF function \code{p<family>} (for example \code{"NO"}, \code{"SHASH"}). Default is \code{"SHASH"}.
+#' @param mu_hat,sigma_hat,nu_hat,tau_hat NIFTI images (or paths) with the fitted parameter maps corresponding to the chosen family. Supply only the parameters required by the family.
+#' @param num_cores Integer number of parallel workers. Defaults to \code{parallelly::availableCores()}.
+#' @return An z-score image with voxel-wise z-scores.
 #' @export
 zscore.map.vbgamlss <- function(yimage,
                                 mask,
@@ -254,136 +265,172 @@ zscore.map.vbgamlss <- function(yimage,
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ############################## ========== ######################################
                              # DEPRECATED #
 ############################## ========== ######################################
 
-
-#' @export
-save_model_old <- function(model_list, file_prefix, num_cores = NULL) {
-  warning("This function is deprecated. Use save_model instead.")
-  # check and make folder
-  parts <- unlist(strsplit(file_prefix, "/"))
-  directory <- paste(parts[-length(parts)], collapse = "/")
-  if (!dir.exists(directory)) {
-    dir.create(directory, recursive = TRUE)
-    cat("Folder created:", directory, "\n")
-  } else {
-    stop("Folder already exists:", directory, "\n")
-  }
-
-  if (is.null(num_cores)) {num_cores <- availableCores()}
-  # save parallel
-  noout <- pbmclapply(1:length(model_list),
-                      function(i) {
-                        filename <- paste0(file_prefix, ".", model_list[[i]]$vxl)
-                        saveRDS(model_list[[i]], file = filename)
-                        NULL
-                      },
-                      mc.cores=num_cores)
-}
-
-
-
-#' Load VBGAMLSS models from files with the specified prefix.
 #'
-#' @param file_prefix Prefix of the files containing the VBGAMLSS models.
-#' @param num_cores Number of CPU cores to use for parallel processing.
-#'   Defaults to all available cores if not provided.
-#' @return A structure containing the loaded VBGAMLSS models.
-#' @importFrom future plan handlers progressor
-#' @importFrom parallel availableCores cluster
-#' @import foreach
-#' @export
-load_model_individually <- function(file_prefix, num_cores = NULL) {
-  warning("This function is deprecated. Use load_model instead.")
-  if (is.null(num_cores)) {num_cores <- availableCores()}
-  # parse path:
-  parts <- unlist(strsplit(file_prefix, "/"))
-  directory <- paste(parts[-length(parts)], collapse = "/")
-  prefix <- gsub("\\'", "", parts[length(parts)])
-  # List files with the specified prefix
-  file_paths <- list.files(directory, pattern = paste0("^", prefix))
-  # Extract integer suffix from file names
-  integer_suffixes <- sapply(file_paths, function(s) {as.numeric(gsub("^.*\\.(\\d+)$", "\\1", s))})
-  # check if missing voxel models
-  expected_numbers <- seq(1, length(integer_suffixes))
-  missing_numbers <- setdiff(expected_numbers, integer_suffixes)
-  cat(paste0('VBGAMLSS model directory:', directory))
-  if (length(missing_numbers) == 0) {
-    cat(paste0('Found models for ', length(integer_suffixes), ' voxels.'))
-  } else {
-    cat(paste0("Some models are missing. can't find model[s] for voxel: ", missing_numbers))
-  }
-  integer_suffixes <- as.list(sort(integer_suffixes))
-  # run load
-  plan(stategy="future::cluster", workers=num_cores)
-  handlers(global = TRUE)
-  handlers("pbmcapply")
-  p <- progressor(along=integer_suffixes)
-  # parallel load
-  models <- foreach(i = integer_suffixes) %dofuture% {
-    rds <- readRDS(paste0(file_prefix, ".", i))
-    p()
-    rds
-  }
-  gc()
-  return(structure(models, class = "vbgamlss"))
-}
-
-#' @export
-load_model_individually_chunks <- function(file_prefix, num_cores = NULL, chunk_max_mb=256,
-                                    index=NULL) {
-  warning("This function is deprecated. Use load_model instead.")
-  if (is.null(num_cores)) {num_cores <- availableCores()}
-  # parse path:
-  parts <- unlist(strsplit(file_prefix, "/"))
-  directory <- paste(parts[-length(parts)], collapse = "/")
-  prefix <- gsub("\\'", "", parts[length(parts)])
-  # List files with the specified prefix
-  file_paths <- list.files(directory, pattern = paste0("^", prefix))
-  # Extract integer suffix from file names
-  integer_suffixes <- sapply(file_paths, function(s) {as.numeric(gsub("^.*\\.(\\d+)$", "\\1", s))})
-
-  # check if missing voxel models
-  expected_numbers <- seq(1, length(integer_suffixes))
-  missing_numbers <- setdiff(expected_numbers, integer_suffixes)
-  cat(paste0('VBGAMLSS model directory:', directory), fill=T)
-
-  if (length(missing_numbers) == 0) {
-    cat(paste0('Found models for ', length(integer_suffixes), ' voxels.'), fill=T)
-    cat(paste0('Expect long post-processing.'), fill=T)
-  } else {
-    warning(paste0("Some models are missing. Can't find model[s] for voxel: ", missing_numbers))
-  }
-  integer_suffixes <- as.list(sort(integer_suffixes))
-
-  # subset the voxel models to load by index
-  if (! is.null(index)){
-    integer_suffixes <- integer_suffixes[index]
-    cat('Index is set, loading only the voxels models number: ',index, '\n', fill=T)
-  }
-  # parallel call
-  plan(stategy="future::cluster", workers=num_cores)
-  Nchunks = estimate_nchunks(paste0(file_prefix, ".", 1),
-                             from_files=TRUE,
-                             chunk_max_Mb=chunk_max_mb)
-  chunked = as.list(isplitIndices(length(integer_suffixes), chunks=Nchunks))
-  models = c()
-  i = 1
-  for (ichunk in chunked){
-    cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
-    i<- i+1
-    integer_suffixes_chunked <- integer_suffixes[ichunk]
-    p <- progressor(length(integer_suffixes_chunked))
-    # parallel loop
-    loaded <- foreach(i = integer_suffixes_chunked) %dofuture% {
-      rds <- readRDS(paste0(file_prefix, ".", i))
-      p()
-      rds
-    }
-    models <- c(models, loaded)
-  }
-  gc()
-  return(structure(models, class = "vbgamlss"))
-}
+#' #' @export
+#' save_model_old <- function(model_list, file_prefix, num_cores = NULL) {
+#'   warning("This function is deprecated. Use save_model instead.")
+#'   # check and make folder
+#'   parts <- unlist(strsplit(file_prefix, "/"))
+#'   directory <- paste(parts[-length(parts)], collapse = "/")
+#'   if (!dir.exists(directory)) {
+#'     dir.create(directory, recursive = TRUE)
+#'     cat("Folder created:", directory, "\n")
+#'   } else {
+#'     stop("Folder already exists:", directory, "\n")
+#'   }
+#'
+#'   if (is.null(num_cores)) {num_cores <- availableCores()}
+#'   # save parallel
+#'   noout <- pbmclapply(1:length(model_list),
+#'                       function(i) {
+#'                         filename <- paste0(file_prefix, ".", model_list[[i]]$vxl)
+#'                         saveRDS(model_list[[i]], file = filename)
+#'                         NULL
+#'                       },
+#'                       mc.cores=num_cores)
+#' }
+#'
+#'
+#'
+#' #' Load VBGAMLSS models from files with the specified prefix.
+#' #'
+#' #' @param file_prefix Prefix of the files containing the VBGAMLSS models.
+#' #' @param num_cores Number of CPU cores to use for parallel processing.
+#' #'   Defaults to all available cores if not provided.
+#' #' @return A structure containing the loaded VBGAMLSS models.
+#' #' @export
+#' load_model_individually <- function(file_prefix, num_cores = NULL) {
+#'   warning("This function is deprecated. Use load_model instead.")
+#'   if (is.null(num_cores)) {num_cores <- availableCores()}
+#'   # parse path:
+#'   parts <- unlist(strsplit(file_prefix, "/"))
+#'   directory <- paste(parts[-length(parts)], collapse = "/")
+#'   prefix <- gsub("\\'", "", parts[length(parts)])
+#'   # List files with the specified prefix
+#'   file_paths <- list.files(directory, pattern = paste0("^", prefix))
+#'   # Extract integer suffix from file names
+#'   integer_suffixes <- sapply(file_paths, function(s) {as.numeric(gsub("^.*\\.(\\d+)$", "\\1", s))})
+#'   # check if missing voxel models
+#'   expected_numbers <- seq(1, length(integer_suffixes))
+#'   missing_numbers <- setdiff(expected_numbers, integer_suffixes)
+#'   cat(paste0('VBGAMLSS model directory:', directory))
+#'   if (length(missing_numbers) == 0) {
+#'     cat(paste0('Found models for ', length(integer_suffixes), ' voxels.'))
+#'   } else {
+#'     cat(paste0("Some models are missing. can't find model[s] for voxel: ", missing_numbers))
+#'   }
+#'   integer_suffixes <- as.list(sort(integer_suffixes))
+#'   # run load
+#'   plan(stategy="future::cluster", workers=num_cores)
+#'   handlers(global = TRUE)
+#'   handlers("pbmcapply")
+#'   p <- progressor(along=integer_suffixes)
+#'   # parallel load
+#'   models <- foreach(i = integer_suffixes) %dofuture% {
+#'     rds <- readRDS(paste0(file_prefix, ".", i))
+#'     p()
+#'     rds
+#'   }
+#'   gc()
+#'   return(structure(models, class = "vbgamlss"))
+#' }
+#'
+#' #' @export
+#' load_model_individually_chunks <- function(file_prefix, num_cores = NULL, chunk_max_mb=256,
+#'                                     index=NULL) {
+#'   warning("This function is deprecated. Use load_model instead.")
+#'   if (is.null(num_cores)) {num_cores <- availableCores()}
+#'   # parse path:
+#'   parts <- unlist(strsplit(file_prefix, "/"))
+#'   directory <- paste(parts[-length(parts)], collapse = "/")
+#'   prefix <- gsub("\\'", "", parts[length(parts)])
+#'   # List files with the specified prefix
+#'   file_paths <- list.files(directory, pattern = paste0("^", prefix))
+#'   # Extract integer suffix from file names
+#'   integer_suffixes <- sapply(file_paths, function(s) {as.numeric(gsub("^.*\\.(\\d+)$", "\\1", s))})
+#'
+#'   # check if missing voxel models
+#'   expected_numbers <- seq(1, length(integer_suffixes))
+#'   missing_numbers <- setdiff(expected_numbers, integer_suffixes)
+#'   cat(paste0('VBGAMLSS model directory:', directory), fill=T)
+#'
+#'   if (length(missing_numbers) == 0) {
+#'     cat(paste0('Found models for ', length(integer_suffixes), ' voxels.'), fill=T)
+#'     cat(paste0('Expect long post-processing.'), fill=T)
+#'   } else {
+#'     warning(paste0("Some models are missing. Can't find model[s] for voxel: ", missing_numbers))
+#'   }
+#'   integer_suffixes <- as.list(sort(integer_suffixes))
+#'
+#'   # subset the voxel models to load by index
+#'   if (! is.null(index)){
+#'     integer_suffixes <- integer_suffixes[index]
+#'     cat('Index is set, loading only the voxels models number: ',index, '\n', fill=T)
+#'   }
+#'   # parallel call
+#'   plan(stategy="future::cluster", workers=num_cores)
+#'   Nchunks = estimate_nchunks(paste0(file_prefix, ".", 1),
+#'                              from_files=TRUE,
+#'                              chunk_max_Mb=chunk_max_mb)
+#'   chunked = as.list(isplitIndices(length(integer_suffixes), chunks=Nchunks))
+#'   models = c()
+#'   i = 1
+#'   for (ichunk in chunked){
+#'     cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
+#'     i<- i+1
+#'     integer_suffixes_chunked <- integer_suffixes[ichunk]
+#'     p <- progressor(length(integer_suffixes_chunked))
+#'     # parallel loop
+#'     loaded <- foreach(i = integer_suffixes_chunked) %dofuture% {
+#'       rds <- readRDS(paste0(file_prefix, ".", i))
+#'       p()
+#'       rds
+#'     }
+#'     models <- c(models, loaded)
+#'   }
+#'   gc()
+#'   return(structure(models, class = "vbgamlss"))
+#' }
