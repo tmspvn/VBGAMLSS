@@ -100,28 +100,18 @@ zscores <- zscore.vbgamlss(predictions, patients_imageframe)
 | Function | Description |
 |----------|-------------|
 | [`images2matrix`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L2) | Convert 4D NIfTI/list of 3D images to subject × voxel matrix. |
-
 | [`load_input_image`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L40) | Load image/matrix from NIfTI, RDS, or data frame. |
-
 | [`save_model`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L10) | Save fitted `vbgamlss` models to file.|
-
 | [`load_model`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L22) | Load saved `vbgamlss` models from file.|
-
-| [`predict.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L32) | Predict parameters or responses from fitted models. 
-|
-
+| [`predict.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L32) | Predict parameters or responses from fitted models. |
 | [`zscore.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L147) | Compute per-voxel z-scores. |
-
-| [`zscore.map.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L221) | Compute and save z-score directly from coefficients maps (i.e. to be used after `map_model_coefficients`). 
-|
+| [`zscore.map.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L221) | Compute and save z-score directly from coefficients maps (i.e. to be used after `map_model_coefficients`). |
 
 ### Mapping
 | Function | Description |
 |----------|-------------|
 | [`map_model_coefficients`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L2) | Save per-voxel model coefficients to NIfTI images (e.g. β coeff. of a regression model as map). |
-
 | [`map_model_predictions`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L52) | Save predicted parameters to NIfTI images (i.e. save μ,σ,ν,τ distribution coeff. as a map). |
-
 | [`map_zscores`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L116) | Save z-score maps to NIfTI images. |
 
 
