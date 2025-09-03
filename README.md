@@ -96,4 +96,3 @@ zscores <- zscore.vbgamlss(predictions, patients_imageframe)
 
 ---
 
-Do you want me to also **design a clean diagram** for the `🖼 Illustration` section so visitors immediately understand the workflow? That would make the README much more engaging.
