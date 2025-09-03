@@ -1,11 +1,7 @@
-Here’s your README updated with **badges**, a **Quick Start** section, and space for a **visual illustration** so it looks polished for GitHub.
-
----
-
-# Fit GAMLSS Models Voxel-Wise for Normative Modelling
+# Fit GAMLSS Models Voxel or Vertex-Wise for Normative Modelling
 
 [![R](https://img.shields.io/badge/R-%3E%3D4.0.0-blue)](https://cran.r-project.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
 [![Issues](https://img.shields.io/github/issues/tmspvn/VBGAMLSS)](https://github.com/tmspvn/VBGAMLSS/issues)
 
@@ -62,13 +58,11 @@ nsubj <- 258
 covs <- data.frame(
   x  = 1:nsubj,
   x1 = as.factor(rbinom(nsubj, 1, 0.5)),
-  x2 = rnorm(nsubj)
 )
 
 covs_patients <- data.frame(
   x  = rnorm(nsubj),
   x1 = rnorm(nsubj) * rnorm(nsubj),
-  x2 = rnorm(nsubj)
 )
 
 # Convert to 2D subject × voxel/vertex
@@ -92,14 +86,6 @@ models_loaded <- load_model("~/vbgamlss.model/fitted_model.vbgamlss")
 predictions <- predict.vbgamlss(models_loaded, newdata = covs_patients)
 zscores <- zscore.vbgamlss(predictions, patients_imageframe)
 ```
-
----
-
-## 🖼 Illustration
-
-*(Replace the placeholder below with a diagram of your pipeline, for example a schematic of voxel-wise model fitting and normative score computation.)*
-
-![Pipeline illustration](docs/figures/pipeline.png)
 
 ---
 
