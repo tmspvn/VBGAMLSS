@@ -46,47 +46,74 @@ Note: VBGAMLSS is heavily based on [gamlss2](https://github.com/gamlss-dev/gamls
 
 ---
 
-## 🚀 Quick Start
+## 🎭 Quick Start
 
 ```r
 library(VBGAMLSS)
 
 # Paths to example data
-img <- "~/subjects.nii.gz"  # 90x90x90x258
-msk <- "~/mask.nii.gz"      # 90x90x90
 nsubj <- 258
+img_controls <- "~/controls.nii.gz"  # 90x90x90x258
+img_patients <- "~/patients.nii.gz"  # 90x90x90x258
+mask <- "~/mask.nii.gz"      # 90x90x90
+
 
 # Covariates
-covs <- data.frame(
-  x  = 1:nsubj,
-  x1 = as.factor(rbinom(nsubj, 1, 0.5)),
+covs_controls <- data.frame(
+  x0  = 1:nsubj,
+  x1 = as.factor(rbinom(nsubj, 1, 0.6)),
 )
 
 covs_patients <- data.frame(
-  x  = rnorm(nsubj),
+  x0  = rnorm(nsubj),
   x1 = rnorm(nsubj) * rnorm(nsubj),
 )
 
-# Convert to 2D subject × voxel/vertex
-imageframe <- images2matrix(img, msk)
 
-# Fit voxel-wise GAMLSS models
-models <- vbgamlss(
-  imageframe,
-  g.formula = Y ~ pb(x) + x1 | x1,
+# Convert to 2D subject × voxel/vertex
+imageframe_controls <- images2matrix(img_controls, mask)
+imageframe_patients <- images2matrix(img_patients, mask)
+
+
+# Fit the voxel-wise GAMLSS models
+vbgamlss_model <- vbgamlss(
+  imageframe_controls,
+  g.formula = Y ~ pb(x0) + x1 | x1,
   g.family  = NO,
   num_cores = 20,
-  train.data = covs,
+  train.data = covs_controls,
   debug = TRUE
 )
+```
 
+#### After a great amount of time... 
+
+```r
 # Save / load
-save_model(models, "~/vbgamlss.model/fitted_model")
+save_model(vbgamlss_model, "~/vbgamlss.model/fitted_model")
 models_loaded <- load_model("~/vbgamlss.model/fitted_model.vbgamlss")
+
 
 # Predict & compute Z-scores
 predictions <- predict.vbgamlss(models_loaded, newdata = covs_patients)
-zscores <- zscore.vbgamlss(predictions, patients_imageframe)
+zscores <- zscore.vbgamlss(predictions, imageframe_patients)
+
+
+# Map the z-score to nifti. `_subj-<ID>.zscore.nii.gz` is then appended. ID id the patient index of the imageframe.
+map_zscores(
+  zscores,
+  mask = mask,
+  filename = "~/patients_deviation_maps/deviation_map",
+)
+
+
+# Map the predicted μ,σ,ν,τ response distribution parameters to nifti. `_subj-<ID>_fam-<FAMILY>_par-<PARAM>.nii.gz` is then appended. FAMILY is the distribution family (e.g. SHASH), PARAM is the parameter (e.g. mu, sigma).
+map_model_predictions(
+  predictions,
+  mask = mask,
+  filename = "~/patients_parameter_maps/prediction", 
+)
+
 ```
 
 ---
@@ -121,19 +148,29 @@ zscores <- zscore.vbgamlss(predictions, patients_imageframe)
 |----------|-------------|
 | [`vbgamlss.cv`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Cross_validation.R#L1) | Perform stratified k-fold cross-validation for voxel-wise models and summarise results. |
 
+---
+
+## 📝 General notes
+
+* Using an HPC is strongly encouraged. Fitting models voxel-wise is computationally and memory intensive and may take a long time.
+* Please consider tweaking `chunk_max_mb` parameter of `vbgamlss` to fit your system's memory constraints (256Mb is a good starting point). The function will proceed chunking the imageframe and parallize a chunk at the time to avoid loading everyhting in memory at once.
+* When performing model selection is advise to do it on a subset of voxels (regularly or randomly sampled) with a penalized likelihood (e.g. `GAIC` with `k=2` or `k=log(n)`) method instead of CV for time reasons. 
+* Providing an already subsampled mask is simple and effective. `vbgamlss`'s `subsample` parameter is being DEPRECATED.
+* `vbgamlss` can be forced to save each chunk and resume the fit from the last chunk in case of interruptions (e.g. time limits on HPC) by providing `cach=T` and `cachedir`. See `?vbgamlss` for details.
 
 ---
 
-## 🚧 Work in progress
+## 🏗️ Work in progress
 
-* `vbgamlss.model_selection` (✅ Implemented, experimental): The model selection system works, but may not generalize across all HPCsystems 
-* Segmentation handling (⚠ Experimental): Implemented but not fully tested.
+* `vbgamlss.model_selection` (✅ Implemented, experimental):.
+* Segmentation handling (⚠ Experimental): implemented but not fully tested.
 
 ---
 
 ## ⚠ Known Issues
 
-* It takes a long time to fit
+* It takes a long time to fit models voxel-wise.
+* `vbgamlss.model_selection` currently does not generalize across all HPC systems 
 
 ---
 

@@ -48,7 +48,7 @@ map_model_coefficients <- function(fittedobj, mask, filename, return_files=FALSE
 
 #' Write prediction maps to NIfTI files
 #'
-#' Convert per-voxel predicted parameter values from a \code{vbgamlss.predictions} object into images and save them to disk.
+#' Convert per-voxel predicted parameter (μ,σ,ν,τ) values from a \code{vbgamlss.predictions} object into images and save them to disk.
 #'
 #' @param obj A \code{"vbgamlss.predictions"} object. Each voxel entry should  contain \code{$family}, optional \code{$vxl}, and one element per modelparameter (for example \code{mu}, \code{sigma}), each being a numeric vector over subjects with consistent ordering across voxels.
 #' @param mask An ANTs image (or path) providing geometry, used to map matrices back to images.

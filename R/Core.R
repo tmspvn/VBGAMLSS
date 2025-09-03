@@ -28,7 +28,7 @@
 #' @param num_cores Number of cores for parallel processing. If NULL, all available cores are used.
 #' @param chunk_max_mb Maximum chunk size in megabytes for processing. Defaults to 64 MB. Increase to 256/512 for HPC.
 #' @param afold Optional boolean or integer vector to subset imageframe for cross-validation folds.
-#' @param subsample Optional numeric vector specifying indices of columns in imageframe to subset for analysis.
+#' @param subsample (to be DEPRECATED) Optional numeric vector of voxel indices to subset the imageframe.
 #' @param debug Logical. If TRUE, enables debug mode to log output in `logdir`. Defaults to FALSE.
 #' @param logdir Directory path for saving logs if `debug` is TRUE. Defaults to current working directory.
 #' @param cache Logical, cache intermediate results.
@@ -109,6 +109,7 @@ vbgamlss <- function(imageframe,
     if (!is.numeric(subsample)) {
       stop("Error: subsample must be a numeric vector of indeces of length sum(mask>0).")
     }
+    warning('Subsampling is going to be deprecated!')
     voxeldata <- voxeldata[,subsample]
     segmentation <- segmentation[,subsample]
   }
