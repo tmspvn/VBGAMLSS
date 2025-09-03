@@ -6,7 +6,7 @@
 [![Issues](https://img.shields.io/github/issues/tmspvn/VBGAMLSS)](https://github.com/tmspvn/VBGAMLSS/issues)
 
 **VBGAMLSS** fits **Generalized Additive Models for Location, Scale and Shape** voxel-wise or vertex-wise, designed for normative modelling in neuroimaging.
-
+VBGAMLSS is based on [gamlss2](https://gamlss-dev.github.io/gamlss2/), so it uses the same formula syntax.
 ---
 
 ## 📦 Requirements
