@@ -42,6 +42,8 @@ devtools::install_github("ANTsX/ANTsR")
 devtools::install_github("tmspvn/VBGAMLSS", dependencies = TRUE)
 ```
 
+Note: VBGAMLSS is heavily based on [gamlss2](https://github.com/gamlss-dev/gamlss2) which is under development so changes are common. If you encounter issues, please let me know.
+
 ---
 
 ## 🚀 Quick Start
@@ -94,7 +96,7 @@ zscores <- zscore.vbgamlss(predictions, patients_imageframe)
 ### Core
 | Function | Description |
 |----------|-------------|
-| [`vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Core.R#L15) | Fit GAMLSS voxel/vertex-wise with optional segmentation and parallel processing. |
+| [`vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Core.R#L15) | Fit GAMLSS voxel/vertex-wise with optional segmentation and parallel processing. Process the data in chunks. |
 
 ### Support
 | Function | Description |
@@ -114,14 +116,18 @@ zscores <- zscore.vbgamlss(predictions, patients_imageframe)
 | [`map_model_predictions`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L52) | Save predicted parameters to NIfTI images (i.e. save μ,σ,ν,τ distribution coeff. as a map). |
 | [`map_zscores`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L116) | Save z-score maps to NIfTI images. |
 
+### Cross-validation
+| Function | Description |
+|----------|-------------|
+| [`vbgamlss.cv`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Cross_validation.R#L1) | Perform stratified k-fold cross-validation for voxel-wise models and summarise results. |
+
 
 ---
 
 ## 🚧 Work in progress
 
-* `vbgamlss.model_selection`  
-* `vbgamlss.cv`
-* Segmentation handling is experimental.
+* `vbgamlss.model_selection` (✅ Implemented, experimental): The model selection system works, but may not generalize across all HPCsystems 
+* Segmentation handling (⚠ Experimental): Implemented but not fully tested.
 
 ---
 
@@ -139,7 +145,7 @@ zscores <- zscore.vbgamlss(predictions, patients_imageframe)
 |----------|-------------|
 | [`vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Core.R#L15) | Fit GAMLSS voxel/vertex-wise with optional segmentation and parallel processing. |
 
-### Cross-validation (experimental)
+### Cross-validation 
 | Function | Description |
 |----------|-------------|
 | [`vbgamlss.cv`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Cross_validation.R#L1) | Perform stratified k-fold cross-validation for voxel-wise models and summarise deviance. |
@@ -161,7 +167,7 @@ zscores <- zscore.vbgamlss(predictions, patients_imageframe)
 | [`map_zscores`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L116) | Save z-score maps to NIfTI images. |
 
 
-### Model-selection (experimental)
+### Model-selection 
 | Function | Description |
 |----------|-------------|
 | [`vbgamlss.model_selection`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Model_selection_system.R#L2) | Run multi-model CV jobs on HPC (Slurm). |
