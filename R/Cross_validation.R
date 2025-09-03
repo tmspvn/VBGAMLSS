@@ -7,14 +7,28 @@
 
 
 
-vbgamlss.cv <- function(image, mask, g.formula, train.data, fold.var, g.family = NO,
-                      segmentation = NULL, segmentation_target=NULL,
-                      num_cores = NULL, chunk_max_mb = 64,
-                      n_folds = 10, k.penalty=NULL, verbose=F, debug=T, logdir=getwd(),
-                      return_all_GD=T, subsample.factor=NULL,
-                      subsample.type=c('regular', 'random'),
-                      save_states=T, resume=T,
-                      ...) {
+#' @export
+vbgamlss.cv <- function(image,
+                        mask,
+                        g.formula,
+                        train.data,
+                        fold.var,
+                        g.family = NO,
+                        segmentation = NULL,
+                        segmentation_target=NULL,
+                        num_cores = NULL,
+                        chunk_max_mb = 64,
+                        n_folds = 10,
+                        k.penalty=NULL,
+                        verbose=F,
+                        debug=T,
+                        logdir=getwd(),
+                        return_all_GD=T,
+                        subsample.factor=NULL,
+                        subsample.type=c('regular', 'random'),
+                        save_states=T, resume=T,
+                        ...) {
+
   cat(paste0("Starting"), fill=T)
 
   if (! is.null(segmentation)){

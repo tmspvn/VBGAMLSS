@@ -11,15 +11,14 @@
 #'
 #' @param model_list vbgamlss fitted model.
 #' @param filename Prefix of the files to save the VBGAMLSS models.
-#' @param voxel Index/s of the Voxel/s to save model for. If NULL, save the entire
-#'  model.
+#' @param voxel Index/s of the Voxel/s to save model for. If NULL, save the entire model.
 #' @export
 save_model <- function(model_list, filename, voxel=NULL) {
   # save
   if (is.null(voxel)) {
     saveRDS(model_list, file = glue(filename, ".vbgamlss"))
   } else {
-    warning("possibly not wokring as intended!!")
+    warning("possibly not working as intended!")
     saveRDS(model_list[[voxel]], file = glue(filename, ".voxel{voxel}.vbgamlss"))
   }
   cat('Saved VBGAMLSS model to:', filename)
@@ -89,7 +88,7 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parame
 
 
   # predict
-  plan(stategy="future::cluster", workers=num_cores)
+  plan(strategy="future::cluster", workers=num_cores)
   future.opt <- list(packages=c('gamlss2', 'gamlss'))
   fname <- as.character(object[[1]]$family)
   familyobj <- gamlss2:::complete_family(get(fname))

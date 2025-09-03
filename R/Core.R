@@ -115,7 +115,7 @@ vbgamlss <- function(imageframe,
 
 
   # parallel settings
-  plan(stategy="future::cluster", workers=num_cores, rscript_libs=.libPaths())
+  plan(strategy="future::cluster", workers=num_cores, rscript_libs=.libPaths())
   options(future.globals.maxSize=20000*1024^2)
   handlers(global = TRUE)
   handlers("pbmcapply")

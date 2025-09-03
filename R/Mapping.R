@@ -61,20 +61,24 @@ map_model_predictions <- function(obj, mask, filename, index=NULL,
                                   return_files=FALSE){
   if (class(obj) != "vbgamlss.predictions") { stop("obj must be of class vbgamlss.predictions")}
   if (! is.null(index)) {cat(paste0('Mapping predictions index: ', list(index)), fill=T)}
-  # prepare usefull info
+
+  # prepare useful info
   nvox <- length(obj)
   first_pred <- obj[[1]]
   family <- first_pred$family
   name_param <- names(first_pred)[! names(first_pred) %in% c('family', 'vxl')]
   nparam <- length(name_param)
+  mask_img <- antsImageRead(mask, 3)
+
   # save a subset?
   if (is.null(index)) {
     nsubj <- length(first_pred[[name_param[1]]])
     subj = 1:nsubj # all
   } else {
-    subj = index # subset
     nsubj = length(subj)
+    subj = index # subset
   }
+
   # process
   for (pname in name_param) {
     param_mat <- matrix(nrow=nsubj, ncol=nvox)
@@ -83,12 +87,12 @@ map_model_predictions <- function(obj, mask, filename, index=NULL,
       param_mat[, ic] <- obj[[ic]][[pname]][subj]
     }
     # convert mat to maps & save per subj
-    param_maps_images <- matrixToImages(param_mat, antsImageRead(mask, 3))
+    param_maps_images <- matrixToImages(param_mat, mask_img)
     # save files
     fnames <- c()
     for (ip in 1:length(param_maps_images)) {
       fname <- paste0(filename,
-                      '_subj-', index[ip],
+                      '_subj-', subj[ip],
                       '_fam-', family,
                       '_par-' , toupper(pname),
                       '.nii.gz')

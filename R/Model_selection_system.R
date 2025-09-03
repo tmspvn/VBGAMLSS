@@ -7,6 +7,7 @@
 
 
 
+#' @export
 vbgamlss.model_selection <- function(# model selection commands
                                      result_file,  # where to save
                                      resume_registry=NULL,  # pass registry file, works as toggle for resume
@@ -174,7 +175,7 @@ vbgamlss.model_selection <- function(# model selection commands
   ### Gather the results ###
   cat(paste0('gathering results'), fill = TRUE)
   results <- gather_jobs_outputs(registry) # to finish
-  saveRDS(results, RESULTS_FILE)
+  saveRDS(results, result_file)
   cat(paste0('Done.\n\n\n'), fill = TRUE)
   warnings()
 }

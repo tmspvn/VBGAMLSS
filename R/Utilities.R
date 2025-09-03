@@ -26,8 +26,9 @@ images2matrix <- function(image_list, mask) {
     cat('Converting from list of images paths', fill=T)
     numImages <- length(image_list)
     dataMatrix <- matrix(nrow = numImages, ncol = numVoxels)
-    for (i in 1:length(imageList))
-    {dataMatrix[i, ] <- as.numeric(imageList[[i]], mask = mask_arr)}
+    for (i in 1:length(image_list))
+    #{dataMatrix[i, ] <- as.numeric(image_list[[i]], mask = mask_arr)}
+    {dataMatrix[i, ] <- as.numeric(antsImageRead(image_list[[i]], 3))[mask_arr]}
 
   } else {
     if (class(image_list) != "character") {
@@ -101,7 +102,7 @@ estimate_nchunks <- function(object, from_files=F, chunk_max_Mb=256) {
     memory_size_mb <- file.info(object)$size / (1024^2)
     Nchunks <- ceiling(memory_size_mb / chunk_max_Mb)
   }
-  return(Nchunks)
+  return(as.numeric(Nchunks))
 }
 
 
