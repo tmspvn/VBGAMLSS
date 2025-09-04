@@ -1,7 +1,7 @@
 # Fit GAMLSS Models Voxel or Vertex-Wise for Normative Modelling
 
 [![R](https://img.shields.io/badge/R-%3E%3D4.0.0-blue)](https://cran.r-project.org/)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
 [![Issues](https://img.shields.io/github/issues/tmspvn/VBGAMLSS)](https://github.com/tmspvn/VBGAMLSS/issues)
 
