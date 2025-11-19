@@ -107,7 +107,7 @@ zscores <- zscore.vbgamlss(predictions, imageframe_patients)
 
 
 # Map the z-score to nifti. `_subj-<ID>.zscore.nii.gz` is then appended. ID id the patient index of the imageframe. 
-Note, this function computes z-scores from a `vbgamlss.predictions" object. It differes from the `zscore.map.vbgamlss` function which computes the maps z-scores directly from coefficient maps.
+# Note, this function computes z-scores from a `vbgamlss.predictions" object. It differes from the `zscore.map.vbgamlss` function which computes the maps z-scores directly from coefficient maps.
 map_zscores(
   zscores,
   mask = mask,
