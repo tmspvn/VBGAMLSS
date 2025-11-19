@@ -31,12 +31,15 @@ tibble
 ```r
 # devtools is required to install from GitHub
 install.packages("devtools")
+
 # gamlss2 from R-universe and ANTsR from GitHub
 install.packages(
   "gamlss2", 
-  repos = c("https://gamlss-dev.R-universe.dev", "https://cloud.R-project.org")
+  repos = c("https://gamlss-dev.R-universe.dev", 
+            "https://cloud.R-project.org")
 )
-# Note for vertex based data antsr is not necessary
+
+# Note for vertex based data ANTsR is not mandatory
 devtools::install_github("ANTsX/ANTsR")
 ```
 
@@ -79,7 +82,7 @@ imageframe_controls <- images2matrix(img_controls, mask)
 imageframe_patients <- images2matrix(img_patients, mask)
 
 
-# Fit the voxel-wise GAMLSS models
+# Fit the voxel-wise GAMLSS models. Note: formulas follow gamlss2 syntax, but the Y is the response variable placeholder is mandatory. 
 vbgamlss_model <- vbgamlss(
   imageframe_controls,
   g.formula = Y ~ pb(x0) + x1 | x1,
@@ -103,7 +106,8 @@ predictions <- predict.vbgamlss(models_loaded, newdata = covs_patients)
 zscores <- zscore.vbgamlss(predictions, imageframe_patients)
 
 
-# Map the z-score to nifti. `_subj-<ID>.zscore.nii.gz` is then appended. ID id the patient index of the imageframe.
+# Map the z-score to nifti. `_subj-<ID>.zscore.nii.gz` is then appended. ID id the patient index of the imageframe. 
+Note, this function computes z-scores from a `vbgamlss.predictions" object. It differes from the `zscore.map.vbgamlss` function which computes the maps z-scores directly from coefficient maps.
 map_zscores(
   zscores,
   mask = mask,
@@ -150,7 +154,7 @@ map_model_predictions(
 ### Cross-validation
 | Function | Description |
 |----------|-------------|
-| [`vbgamlss.cv`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Cross_validation.R#L1) | Perform stratified k-fold cross-validation for voxel-wise models and summarise results. |
+| [`vbgamlss.cv`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Cross_validation.R#L1) | Perform stratified k-fold cross-validation for voxel-wise models and summaries results. |
 
 ---
 
@@ -166,7 +170,7 @@ map_model_predictions(
 
 ## 🏗️ Work in progress
 
-* `vbgamlss.model_selection` (✅ Implemented, experimental):.
+* `vbgamlss.model_selection` (✅e Epxerimental):.
 * Segmentation handling (⚠ Experimental): implemented but not fully tested.
 
 ---

@@ -257,7 +257,7 @@ TRY <- function(expr, logfile=NULL, save.env.and.stop=F){
     packageStartupMessage(
       paste0(
         "*** WARNING: The 'ANTsR' package is not installed (https://github.com/ANTsX/ANTsR). ***\n",
-        "  The functions that require ANTsR to work include: ", missing_functions, "\n", "\n",
+        "  The functions that require ANTsR to work include: ", "\n", missing_functions, "\n",
         "  Install it with 'devtools::install_github(\"ANTsX/ANTsR\")' if you need to work with voxel based data."
       ),
       appendLF = TRUE # Ensure a newline after the message
