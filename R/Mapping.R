@@ -15,7 +15,6 @@
 #' @param filename Character prefix for output files. The function appends \code{"_par-<PAR>_coef-(<TERM>).nii.gz"} for each coefficient.
 #' @param return_files Logical, if \code{TRUE} return the vector of file paths, otherwise return \code{invisible(NULL)}. Default \code{FALSE}.
 #' @return If \code{return_files = TRUE}, a character vector of output paths. Files are written in NIfTI format.
-#' @importFrom ANTsRCore antsImageRead antsImageWrite
 #' @export
 map_model_coefficients <- function(fittedobj, mask, filename, return_files=FALSE){
   if (class(fittedobj) != "vbgamlss") { stop("fittedobj must be of class vbgamlss.")}
@@ -55,7 +54,6 @@ map_model_coefficients <- function(fittedobj, mask, filename, return_files=FALSE
 #' @param filename Character prefix for output files. The function appends \code{"_subj-<ID>_fam-<FAMILY>_par-<PARAM>.nii.gz"}.
 #' @param index Optional integer vector of subject indices to map. If \code{NULL} all subjects are processed.
 #' @param return_files Logical, if \code{TRUE} return the vector of file paths written for the last parameter processed. Default \code{FALSE}.
-#' @importFrom ANTsRCore antsImageRead antsImageWrite
 #' @export
 map_model_predictions <- function(obj, mask, filename, index=NULL,
                                   return_files=FALSE){
@@ -114,8 +112,6 @@ map_model_predictions <- function(obj, mask, filename, index=NULL,
 #' @param filename Character prefix for output files. The function appends \code{"_subj-<ID>.zscore.nii.gz"}.
 #' @param index Optional integer vector of subject indices to export. If \code{NULL} (default), all subjects are exported.
 #' @param return_files Logical, if \code{TRUE} return the vector of written file paths. Default \code{FALSE}.
-#' @import ANTsRCore
-#' @importFrom ANTsRCore antsImageRead antsImageWrite
 #' @export
 map_zscores <- function(zscores, mask, filename, index=NULL,
                         return_files=FALSE){

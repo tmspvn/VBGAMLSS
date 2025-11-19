@@ -43,7 +43,7 @@ and each row represents a subject.}
 
 \item{afold}{Optional boolean or integer vector to subset imageframe for cross-validation folds.}
 
-\item{subsample}{Optional numeric vector specifying indices of columns in imageframe to subset for analysis.}
+\item{subsample}{(to be DEPRECATED) Optional numeric vector of voxel indices to subset the imageframe.}
 
 \item{debug}{Logical. If TRUE, enables debug mode to log output in \code{logdir}. Defaults to FALSE.}
 

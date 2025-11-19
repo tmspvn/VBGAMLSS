@@ -5,7 +5,7 @@
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
 [![Issues](https://img.shields.io/github/issues/tmspvn/VBGAMLSS)](https://github.com/tmspvn/VBGAMLSS/issues)
 
-**VBGAMLSS** fits **Generalized Additive Models for Location, Scale and Shape** voxel-wise or vertex-wise, designed for normative modelling in neuroimaging.
+***VBGAMLSS*** fits ***Generalized Additive Models for Location, Scale and Shape*** voxel-wise or vertex-wise, designed for normative modelling in neuroimaging.
 VBGAMLSS is based on [gamlss2](https://gamlss-dev.github.io/gamlss2/), so it uses the same formula syntax.
 ---
 
@@ -29,10 +29,14 @@ tibble
 ### Install `gamlss2` and `ANTsR`
 
 ```r
+# devtools is required to install from GitHub
+install.packages("devtools")
+# gamlss2 from R-universe and ANTsR from GitHub
 install.packages(
   "gamlss2", 
   repos = c("https://gamlss-dev.R-universe.dev", "https://cloud.R-project.org")
 )
+# Note for vertex based data antsr is not necessary
 devtools::install_github("ANTsX/ANTsR")
 ```
 

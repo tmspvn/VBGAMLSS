@@ -18,5 +18,5 @@ map_model_predictions(obj, mask, filename, index = NULL, return_files = FALSE)
 \item{return_files}{Logical, if \code{TRUE} return the vector of file paths written for the last parameter processed. Default \code{FALSE}.}
 }
 \description{
-Convert per-voxel predicted parameter values from a \code{vbgamlss.predictions} object into images and save them to disk.
+Convert per-voxel predicted parameter (μ,σ,ν,τ) values from a \code{vbgamlss.predictions} object into images and save them to disk.
 }

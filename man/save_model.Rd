@@ -11,8 +11,7 @@ save_model(model_list, filename, voxel = NULL)
 
 \item{filename}{Prefix of the files to save the VBGAMLSS models.}
 
-\item{voxel}{Index/s of the Voxel/s to save model for. If NULL, save the entire
-model.}
+\item{voxel}{Index/s of the Voxel/s to save model for. If NULL, save the entire model.}
 }
 \description{
 Save VBGAMLSS models from files with the specified prefix.
