@@ -241,15 +241,23 @@ TRY <- function(expr, logfile=NULL, save.env.and.stop=F){
 
 
 
-############################  R Package fucntions  ##############################
-
+############################  R Package functions  ##############################
+# Print warning for missing ANTsR package
 .onAttach <- function(libname, pkgname) {
+  list_ants_dependencies <- c("images2matrix",
+                              "load_input_image",
+                              "map_model_coefficients",
+                              "map_model_predictions",
+                              "map_zscores",
+                              "zscore.map.vbgamlss",
+                              "vbgamlss.cv"
+                              )
   if (!requireNamespace("ANTsR", quietly = TRUE)) {
-    missing_functions <- paste(c("antsImageRead", "antsImageWrite"), collapse = ", ")
+    missing_functions <- paste(list_ants_dependencies, collapse = ", ")
     packageStartupMessage(
       paste0(
-        "*** WARNING: The 'ANTsR' package is not installed. ***\n",
-        "  The following functions will not work: ", missing_functions, "\n",
+        "*** WARNING: The 'ANTsR' package is not installed (https://github.com/ANTsX/ANTsR). ***\n",
+        "  The functions that require ANTsR to work include: ", missing_functions, "\n", "\n",
         "  Install it with 'devtools::install_github(\"ANTsX/ANTsR\")' if you need to work with voxel based data."
       ),
       appendLF = TRUE # Ensure a newline after the message
