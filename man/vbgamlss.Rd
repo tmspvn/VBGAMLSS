@@ -14,7 +14,6 @@ vbgamlss(
   num_cores = NULL,
   chunk_max_mb = 64,
   afold = NULL,
-  subsample = NULL,
   debug = F,
   logdir = getwd(),
   cache = F,
@@ -24,26 +23,24 @@ vbgamlss(
 )
 }
 \arguments{
-\item{imageframe}{A data frame containing the voxel data. Each column represents a voxel,
+\item{imageframe}{A dataframe containing the voxel data. Each column represents a voxel/vertex,
 and each row represents a subject.}
 
-\item{g.formula}{A formula for the GAMLSS model.}
+\item{g.formula}{A formula for the GAMLSS2 model.}
 
 \item{train.data}{A data frame containing subject-level data. Columns must correspond to covariates in \code{g.formula}.}
 
 \item{g.family}{A GAMLSS family object. Defaults to \code{NO} (Normal).}
 
-\item{segmentation}{Optional data frame containing segmentation information.}
+\item{segmentation}{Optional, dataframe generated from a mask containing segmentation information (e.g. 1=GM, 2=WM). It must have the shape as \code{imageframe}.}
 
-\item{segmentation_target}{Optional target for the segmentation data to subset the analysis.}
+\item{segmentation_target}{Optional, integer, target/label for the segmentation data to subset the analysis (e.g. 1 for GM).}
 
 \item{num_cores}{Number of cores for parallel processing. If NULL, all available cores are used.}
 
-\item{chunk_max_mb}{Maximum chunk size in megabytes for processing. Defaults to 64 MB. Increase to 256/512 for HPC.}
+\item{chunk_max_mb}{Maximum chunk size in megabytes for processing. Defaults to 64 MB. Increase to 128/256/512 for HPC.}
 
 \item{afold}{Optional boolean or integer vector to subset imageframe for cross-validation folds.}
-
-\item{subsample}{(to be DEPRECATED) Optional numeric vector of voxel indices to subset the imageframe.}
 
 \item{debug}{Logical. If TRUE, enables debug mode to log output in \code{logdir}. Defaults to FALSE.}
 
@@ -51,9 +48,9 @@ and each row represents a subject.}
 
 \item{cache}{Logical, cache intermediate results.}
 
-\item{cachedir}{Character path for cached artifacts.}
+\item{cachedir}{Character, path for cached artifacts.}
 
-\item{force_ypositivity}{Logical, shift/clip y to be positive if the family requires it.}
+\item{force_ypositivity}{Logical, shift/clip y to be positive if the GAMLSS distribution family requires it.}
 
 \item{...}{Additional arguments passed to the GAMLSS fitting function.}
 }
@@ -69,7 +66,8 @@ The function performs the following steps:
 \itemize{
 \item Checks input data and prepares voxel and segmentation data as needed.
 \item If parallel processing is enabled, splits voxel data into chunks based on memory constraints.
+Each chunks are processed sequentially, but voxels/vertex within each chunk are processed in parallel.
 \item Fits a GAMLSS model to each voxel using specified covariates and segmentation data, if available.
-\item Returns a list of models, one for each voxel.
+\item Returns a vbgamlss object containing the list of models, one for each voxel.
 }
 }
