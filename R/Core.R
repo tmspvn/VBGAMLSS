@@ -18,21 +18,21 @@
 #' The `vbgamlss` function fits Bayesian GAMLSS models on voxel data with optional segmentation,
 #' allowing for parallel processing. This function can be used to analyze high-dimensional imaging data.
 #'
-#' @param imageframe A data frame containing the voxel data. Each column represents a voxel,
+#' @param imageframe A dataframe containing the voxel data. Each column represents a voxel/vertex,
 #'                   and each row represents a subject.
-#' @param g.formula A formula for the GAMLSS model.
+#' @param g.formula A formula for the GAMLSS2 model.
 #' @param train.data A data frame containing subject-level data. Columns must correspond to covariates in `g.formula`.
 #' @param g.family A GAMLSS family object. Defaults to `NO` (Normal).
-#' @param segmentation Optional data frame containing segmentation information.
-#' @param segmentation_target Optional target for the segmentation data to subset the analysis.
+#' @param segmentation Optional, dataframe generated from a mask containing segmentation information (e.g. 1=GM, 2=WM). It must have the shape as `imageframe`.
+#' @param segmentation_target Optional, integer, target/label for the segmentation data to subset the analysis (e.g. 1 for GM).
 #' @param num_cores Number of cores for parallel processing. If NULL, all available cores are used.
-#' @param chunk_max_mb Maximum chunk size in megabytes for processing. Defaults to 64 MB. Increase to 256/512 for HPC.
+#' @param chunk_max_mb Maximum chunk size in megabytes for processing. Defaults to 64 MB. Increase to 128/256/512 for HPC.
 #' @param afold Optional boolean or integer vector to subset imageframe for cross-validation folds.
 #' @param debug Logical. If TRUE, enables debug mode to log output in `logdir`. Defaults to FALSE.
 #' @param logdir Directory path for saving logs if `debug` is TRUE. Defaults to current working directory.
 #' @param cache Logical, cache intermediate results.
-#' @param cachedir Character path for cached artifacts.
-#' @param force_ypositivity Logical, shift/clip y to be positive if the family requires it.
+#' @param cachedir Character, path for cached artifacts.
+#' @param force_ypositivity Logical, shift/clip y to be positive if the GAMLSS distribution family requires it.
 #' @param ... Additional arguments passed to the GAMLSS fitting function.
 #'
 #' @return A list of GAMLSS models, with class `"vbgamlss"`.
@@ -41,8 +41,9 @@
 #' The function performs the following steps:
 #' - Checks input data and prepares voxel and segmentation data as needed.
 #' - If parallel processing is enabled, splits voxel data into chunks based on memory constraints.
+#'   Each chunks are processed sequentially, but voxels/vertex within each chunk are processed in parallel.
 #' - Fits a GAMLSS model to each voxel using specified covariates and segmentation data, if available.
-#' - Returns a list of models, one for each voxel.
+#' - Returns a vbgamlss object containing the list of models, one for each voxel.
 #'
 #' @export
 vbgamlss <- function(imageframe,
