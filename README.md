@@ -82,7 +82,8 @@ imageframe_controls <- images2matrix(img_controls, mask)
 imageframe_patients <- images2matrix(img_patients, mask)
 
 
-# Fit the voxel-wise GAMLSS models. Note: formulas follow gamlss2 syntax, but the Y is the response variable placeholder is mandatory. 
+# Fit the voxel-wise GAMLSS models. Note: formulas follow gamlss2 syntax, 
+#  but the Y is the response variable placeholder is mandatory. 
 vbgamlss_model <- vbgamlss(
   imageframe_controls,
   g.formula = Y ~ pb(x0) + x1 | x1,
@@ -106,8 +107,11 @@ predictions <- predict.vbgamlss(models_loaded, newdata = covs_patients)
 zscores <- zscore.vbgamlss(predictions, imageframe_patients)
 
 
-# Map the z-score to nifti. `_subj-<ID>.zscore.nii.gz` is then appended. ID id the patient index of the imageframe. 
-# Note, this function computes z-scores from a `vbgamlss.predictions" object. It differes from the `zscore.map.vbgamlss` function which computes the maps z-scores directly from coefficient maps.
+# Map the z-score to nifti. `_subj-<ID>.zscore.nii.gz` is then appended. 
+#  ID id the patient index of the imageframe. 
+#  Note, this function computes z-scores from a `vbgamlss.predictions" object. 
+#  It differes from the `map_zscores_from_map` function which computes the maps 
+#  z-scores directly from coefficient maps.
 map_zscores(
   zscores,
   mask = mask,
@@ -142,7 +146,6 @@ map_model_predictions(
 | [`load_model`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L22) | Load saved `vbgamlss` models from file.|
 | [`predict.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L32) | Predict parameters or responses from fitted models. |
 | [`zscore.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L147) | Compute per-voxel z-scores. |
-| [`zscore.map.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L221) | Compute and save z-score directly from coefficients maps (i.e. after `map_model_predictions`). |
 
 ### Mapping
 | Function | Description |
@@ -150,6 +153,7 @@ map_model_predictions(
 | [`map_model_coefficients`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L2) | Save per-voxel model coefficients to NIfTI images (e.g. β coeff. of a regression model as maps). |
 | [`map_model_predictions`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L52) | Save predicted parameters to NIfTI images (i.e. save μ,σ,ν,τ distribution coeff. as a maps). |
 | [`map_zscores`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L116) | Save z-score maps to NIfTI images. |
+| [`map_zscores_from_map`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L221) | Compute and save z-score directly from coefficients maps (i.e. after `map_model_predictions`). |
 
 ### Cross-validation
 | Function | Description |

@@ -201,69 +201,6 @@ zscore.vbgamlss <- function(predictions, yimageframe, num_cores=NULL){
 
 
 
-#' Compute voxel-wise Z-scores from VBGAMLSS coefficients maps
-#'
-#' Given a subject image and predicted parameter maps for a GAMLSS family, compute zscore at each voxel inside a mask and return a z-score image.
-#'
-#' @param yimage A NIFTI image (or path readable by \code{antsImageRead}) containing the observed data to score.
-#' @param mask An NIFTI image (or path) defining voxels to evaluate (nonzero entries are used).
-#' @param family Character scalar naming a \pkg{gamlss.dist} family with an available CDF function \code{p<family>} (for example \code{"NO"}, \code{"SHASH"}). Default is \code{"SHASH"}.
-#' @param mu_hat,sigma_hat,nu_hat,tau_hat NIFTI images (or paths) with the fitted parameter maps corresponding to the chosen family. Supply only the parameters required by the family.
-#' @param num_cores Integer number of parallel workers. Defaults to \code{parallelly::availableCores()}.
-#' @return An z-score image with voxel-wise z-scores.
-#' @export
-zscore.map.vbgamlss <- function(yimage,
-                                mask,
-                                family='SHASH',
-                                mu_hat,
-                                sigma_hat=NULL,
-                                nu_hat=NULL,
-                                tau_hat=NULL,
-                                num_cores=NULL){
-  if (is.null(num_cores)) {num_cores <- availableCores()}
-
-  # make df
-  frame = do.call(rbind,
-                  list(y = images2matrix( yimage, mask),
-                       mu = images2matrix( mu_hat, mask),
-                       sigma = images2matrix( sigma_hat, mask),
-                       nu = images2matrix( nu_hat, mask),
-                       tau = images2matrix( tau_hat, mask)
-                  ))
-  frame <- as.data.frame(t(frame))
-
-  # parallel function
-  do.zscore <- function(i) {
-    # get number of params
-    lpar <- sum(names(frame) %in% c("mu", "sigma", "nu", "tau"))
-    yval <- frame[i, 'y']
-    pred <- frame[i, ]
-
-    qfun <- paste("p", family, sep="")
-    if (lpar == 1) {
-      newcall <- call(qfun, yval, mu = pred$mu)
-    } else if (lpar == 2) {
-      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma)
-    } else if (lpar == 3) {
-      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma, nu = pred$nu)
-    } else {
-      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma, nu = pred$nu, tau = pred$tau)
-    }
-    cdf <- eval(newcall)
-    rqres <- qnorm(cdf)
-    return(rqres)
-  }
-
-  # compute z-scores
-  subzs <- pbmclapply(1:dim(frame)[1],
-                      do.zscore,
-                      mc.cores=num_cores)
-  zmap <- matrixToImages(matrix(unlist(subzs), nrow = 1), antsImageRead(mask,3))
-  return(zmap[[1]])
-}
-
-
-
 
 
 
