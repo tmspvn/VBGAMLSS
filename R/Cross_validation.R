@@ -117,7 +117,7 @@ vbgamlss.cv <- function(image,
                                segmentation=segmentation,
                                segmentation_target=segmentation_target,
                                num_cores=num_cores,
-                               chunk_max_mb=128,
+                               chunk_max_mb=chunk_max_mb,
                                afold=training_fold, # pass fold indexes
                                debug=T,
                                logdir=logdir
@@ -130,7 +130,7 @@ vbgamlss.cv <- function(image,
     }
 
 
-    # predict new fold
+    # Predict new fold
     cat('-Estimating GD \n', fill=T)
     fold.gd.file = file.path(state.dir, paste0('.fold.', fold, '.GD'))
     if (resume & file.exists(fold.gd.file)){
@@ -186,11 +186,19 @@ vbgamlss.cv <- function(image,
 }
 
 
+
+
+
+
+
+
+# Predict new fold Global Deviance
 predictGD <- function (object, newdata = NULL, verbose=F,
                        segmentation=NULL, segmentation_target=NULL,
                        mask=NULL, afold=NULL,
                        loginfo=c(fold, state.dir),
                        resume=T, save_states=T, ...) {
+
   if (is.null(newdata)){stop("newdata is not set")}
   .fold = loginfo[1]
   .state.dir = loginfo[2]
@@ -278,7 +286,15 @@ predictGD <- function (object, newdata = NULL, verbose=F,
 }
 
 
+
+
+
+
+
+
+# Test new fold Global Deviance
 testGD <- function(nfit, familyobj){
+
   ## Internal of predictGD ##
   dfun <- paste("d", familyobj$family, sep = "")
   pfun <- paste("p", familyobj$family, sep = "")
@@ -374,9 +390,11 @@ testGD <- function(nfit, familyobj){
 
   Vresid <- qNO(eval(ures))
   dev <- -2 * sum(eval(devi))
+
   # Recompose subsetted NaNs
   Vresid_na <- yisnan * NA
   Vresid_na[! yisnan] <- Vresid
+
   # output
   out <- list(TGD = dev, predictError = dev/length(nfit$mu),
               resid = Vresid_na)
@@ -385,6 +403,12 @@ testGD <- function(nfit, familyobj){
 }
 
 
+
+
+
+
+
+# Summarize fold Global Deviance statistics
 statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
   missfits <- sum(is.na(GDs))
   nsub <- length(GDs[[1]]$resid)
@@ -432,6 +456,14 @@ statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
 }
 
 
+
+
+
+
+
+
+
+# Descriptive statistics helper
 describe_stats <- function(x, vname) {
   out <- c()
   x <- na.omit(x)
@@ -443,6 +475,14 @@ describe_stats <- function(x, vname) {
 }
 
 
+
+
+
+
+
+
+# Create stratified cross-validation folds
+#' @export
 stratCVfolds <- function(df, k.fold=10){
   folds_row <- rep(0, length(df))
   folds_col <- create_folds(df,
@@ -456,6 +496,13 @@ stratCVfolds <- function(df, k.fold=10){
 }
 
 
+
+
+
+
+
+
+# Lazy get cross-validated Global Deviance from cvresults
 getCVGD <- function(cvresults, term='mean') {
   # mean, sd,
   # quantile.0%, quantile.25%, quantile.50%, quantile.75%, quantile.100%,
@@ -466,6 +513,13 @@ getCVGD <- function(cvresults, term='mean') {
 }
 
 
+
+
+
+
+
+
+# Lazy get cross-validated penalized Global Deviance from cvresults
 getCVGD.pen <- function(cvresults, term='quantile.50%') {
   CVGD = 0
   for (fold in cvresults) {CVGD <- CVGD + fold$GDpen[[term]]}
@@ -473,6 +527,13 @@ getCVGD.pen <- function(cvresults, term='quantile.50%') {
 }
 
 
+
+
+
+
+
+
+# Lazy get all (pen and non) cross-validated Global Deviance from cvresults
 getCVGD.all <- function(cvresults, penalized=F) {
   out <- c()
   for (t in c('mean', 'sd', 'quantile.0%', 'quantile.25%', 'quantile.50%',
@@ -487,6 +548,14 @@ getCVGD.all <- function(cvresults, penalized=F) {
 }
 
 
+
+
+
+
+
+
+# Akaike weights from a vector of AICc or similar values
+#' @export
 akaike_weights <- function(v){
   # https://link.springer.com/content/pdf/10.3758/BF03206482.pdf
   # Dinga et al 2021
