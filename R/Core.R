@@ -45,6 +45,10 @@
 #' - Fits a GAMLSS model to each voxel using specified covariates and segmentation data, if available.
 #' - Returns a vbgamlss object containing the list of models, one for each voxel.
 #'
+#' @import future
+#' @import doFuture
+#' @import progressr
+#' @import gamlss2
 #' @export
 vbgamlss <- function(imageframe,
                      g.formula,
@@ -114,17 +118,17 @@ vbgamlss <- function(imageframe,
   # }
 
   # Parallel settings
-  future::plan(strategy="future::cluster", workers=num_cores) # rscript_libs=.libPaths()
+  future::plan(strategy="future::cluster", workers=num_cores) # ->   with(plan(multisession), local = TRUE)
   options(future.globals.maxSize=20000*1024^2)
-  handlers(global = TRUE)
-  handlers("pbmcapply")
+  progressr::handlers(global = TRUE)
+  progressr::handlers("pbmcapply")
   p <- with_progress(progressor(ncol(voxeldata)))
   future.opt <- list(packages=c('gamlss2'), seed = TRUE)
 
 
   # Compute chunk size
   Nchunks <- estimate_nchunks(voxeldata, chunk_max_Mb=chunk_max_mb)
-  chunked = as.list(isplitIndices(ncol(voxeldata), chunks=Nchunks))
+  chunked = as.list(itertools::isplitIndices(ncol(voxeldata), chunks=Nchunks))
 
 
   # Cache dir
