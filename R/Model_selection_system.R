@@ -1,5 +1,5 @@
 #############################  model selection  ################################
-
+# this set of functions are hard coded to work with our local SLURM HPC systems
 
 
 
@@ -29,9 +29,7 @@ vbgamlss.model_selection <- function(# model selection commands
                                      k.penalty=NULL,
                                      verbose=F,
                                      return_all_GD=T,
-                                     subsample=NULL,
-                                     subsample.type=c('regular', 'random'),
-                                      ...){
+                                     ...){
 
   if (class(train.data) != "character") { stop("train.data class must be a path")}
 
@@ -108,7 +106,7 @@ vbgamlss.model_selection <- function(# model selection commands
     load('{registry['genv']}')
     load('{slurm$jenv}')
     quite(lapply(registry$pkgs, require, character.only = TRUE))
-    set.seed(28041945)
+    set.seed(04281945)
     out <- vbgamlss.cv(g.formula = g.formula,
                       image = image,
                       mask = mask,
@@ -121,8 +119,6 @@ vbgamlss.model_selection <- function(# model selection commands
                       k.penalty = k.penalty,
                       verbose = verbose,
                       return_all_GD = return_all_GD,
-                      subsample = subsample,
-                      subsample.type = subsample.type,
                       num_cores = NULL,
                       debug=T, save_states=T, resume=T,
                       logdir = slurm$wd)
@@ -181,6 +177,7 @@ vbgamlss.model_selection <- function(# model selection commands
 }
 
 
+
 slurm_template <- function(){
 return(
 '#!/bin/bash
@@ -193,7 +190,7 @@ return(
 #SBATCH --nodes=1
 
 # Enviroment variables
-module load singularityce/3.11.3
+module load singularityce/4.1.0
 containeR=/scratch/tpavan1/scripts_tommaso/test_batchtools/NormMod_R.sif
 ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=<%= slurm$ncpu %>
 
@@ -204,19 +201,22 @@ singularity exec $containeR Rscript <%= SCRIPT %>
 )}
 
 
+
 slurm_resources <- function(n='VBGAMLSS', o=NULL, e=NULL,
                             t='71:59:00', m='40G', c='12', a=1, r=NULL) {
   slurm <- list()
-  slurm$jobname <- as.character(n)
-  slurm$output <- as.character(o)
-  slurm$error <- as.character(e)
-  slurm$time <- as.character(t)
-  slurm$mempercpu <- as.character(m)
-  slurm$ncpu <- as.character(c)
-  slurm$rdsout <- as.character(r)
-  slurm$array <- a
+  slurm$jobname <- as.character(n)       # name of the slurm job
+  slurm$output <- as.character(o)        # path to the .out slurm file
+  slurm$error <- as.character(e)         # path to the .err slurm file
+  slurm$time <- as.character(t)          # max slurm time
+  slurm$mempercpu <- as.character(m)     # memory per cpu
+  slurm$ncpu <- as.character(c)          # number of cpus
+  slurm$rdsout <- as.character(r)        # path to the results rds file
+  slurm$array <- a                       # array jobs
   return(slurm)
 }
+
+
 
 slurm_registry <- function(Njobs, env){
   registry <- list()
@@ -242,6 +242,7 @@ slurm_registry <- function(Njobs, env){
 }
 
 
+
 sanity_check <- function(file_list){
   ## safety check ##
   for (file_path in file_list) {
@@ -252,6 +253,7 @@ sanity_check <- function(file_list){
     }
   }
 }
+
 
 
 sbatch_jobs <- function(registry) {
@@ -280,6 +282,7 @@ sbatch_jobs <- function(registry) {
 }
 
 
+# To be changed, SLURM has output in machine readable format
 jobs_status <- function(registry, param='status') {
   # sacct -j 22119441 --format="JobID,State,Elapsed,ExitCode,End"
   # JobID             State    Elapsed ExitCode                 End
@@ -303,6 +306,7 @@ jobs_status <- function(registry, param='status') {
   if (param=='exitcode'){return(jobs_exitcode)}
   if (param=='end'){return(jobs_end)}
 }
+
 
 
 monitor_jobs <- function(registry, sleep=10, resbatch=NULL) {
@@ -366,11 +370,11 @@ monitor_jobs <- function(registry, sleep=10, resbatch=NULL) {
 }
 
 
+
 # print(status_df)
 # cat(paste0('\nAll Jobs terminated:', Sys.time(), ''), fill=T)
 # cat(paste0('Registry path:', registry$path), fill=T)
 # cat("Done", fill = T)
-
 
 
 

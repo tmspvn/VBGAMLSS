@@ -170,9 +170,9 @@ map_model_predictions(
 
 ## 🏗️ Work in progress
 
-* `vbgamlss.model_selection`: ❌
-* `vbgamlss.cv`: ❌
-* Segmentation handling: ❌
+* `vbgamlss.cv`: ⚠️ implemented, but not fully tested. Undocumented.
+* `vbgamlss` segmentation handling: ⚠️ implemented, but not fully tested.
+* `vbgamlss.model_selection`: ❌ "It will not work on other HPC systems. Undocumented.
 
 ---
 
