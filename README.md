@@ -163,15 +163,16 @@ map_model_predictions(
 * Using an HPC is strongly encouraged. Fitting models voxel-wise is computationally and memory intensive and may take a long time.
 * Please consider tweaking `chunk_max_mb` parameter of `vbgamlss` to fit your system's memory constraints (256Mb is a good starting point). The function will proceed chunking the imageframe and parallize a chunk at the time to avoid loading everyhting in memory at once.
 * When performing model selection is advise to do it on a subset of voxels (regularly or randomly sampled) with a penalized likelihood (e.g. `GAIC` with `k=2` or `k=log(n)`) method instead of CV for time reasons. 
-* Providing an already subsampled mask is simple and effective. `vbgamlss`'s `subsample` parameter is being DEPRECATED.
-* `vbgamlss` can be forced to save each chunk and resume the fit from the last chunk in case of interruptions (e.g. time limits on HPC) by providing `cach=T` and `cachedir`. See `?vbgamlss` for details.
+* Providing an already subsampled mask is simple and effective. `vbgamlss`'s `subsample` parameter is DEPRECATED.
+* `vbgamlss` can be forced to save each chunk and resume the fit from the last chunk in case of interruptions (e.g. time limits on HPC) by providing `cache=T` and `cachedir`. See `?vbgamlss` for details.
 
 ---
 
 ## 🏗️ Work in progress
 
-* `vbgamlss.model_selection` (✅e Epxerimental):.
-* Segmentation handling (⚠ Experimental): implemented but not fully tested.
+* `vbgamlss.model_selection`: ❌
+* `vbgamlss.cv`: ❌
+* Segmentation handling: ❌
 
 ---
 

@@ -24,8 +24,6 @@ vbgamlss.cv <- function(image,
                         debug=T,
                         logdir=getwd(),
                         return_all_GD=T,
-                        subsample.factor=NULL,
-                        subsample.type=c('regular', 'random'),
                         save_states=T, resume=T,
                         ...) {
 
@@ -80,12 +78,13 @@ vbgamlss.cv <- function(image,
     if (save_states){saveRDS(train.data$folds, fold.file)}
   }
 
+  # DEPRECATED
   # subsample?
-  if (! is.null(subsample.factor)){
-    subsample_ <- get_subsample_indices(sum(antsImageRead(mask)>0),
-                                       subsample.type,
-                                       subsample.factor)
-  } else {subsample_ <- NULL}
+  # if (! is.null(subsample.factor)){
+  #   subsample_ <- get_subsample_indices(sum(antsImageRead(mask)>0),
+  #                                      subsample.type,
+  #                                      subsample.factor)
+  # } else {subsample_ <- NULL}
 
 
   # Prepare storage for results
@@ -109,19 +108,20 @@ vbgamlss.cv <- function(image,
       cat(paste0("Found fold models, loading them"), fill=T)
       model <- readRDS(fold.model.file)
     } else {
-      model <- quite(vbgamlss_chunks(image=image,
-                                     mask=mask,
-                                     g.formula=as.formula(g.formula),
-                                     train.data=train.data,
-                                     g.family=g.family,
-                                     segmentation=segmentation,
-                                     segmentation_target=segmentation_target,
-                                     num_cores=num_cores,
-                                     chunk_max_mb=128,
-                                     afold=training_fold, # pass fold indexes
-                                     subsample=subsample_,
-                                     debug=T,
-                                     logdir=logdir),
+      model <- quite(
+                      vbgamlss(image=image,
+                               mask=mask,
+                               g.formula=as.formula(g.formula),
+                               train.data=train.data,
+                               g.family=g.family,
+                               segmentation=segmentation,
+                               segmentation_target=segmentation_target,
+                               num_cores=num_cores,
+                               chunk_max_mb=128,
+                               afold=training_fold, # pass fold indexes
+                               debug=T,
+                               logdir=logdir
+                               ),
                      skip=verbose)
       if (save_states){saveRDS(model, fold.model.file)}
       # update and save status on the registry
@@ -138,15 +138,17 @@ vbgamlss.cv <- function(image,
       GDs <- readRDS(fold.gd.file)
     } else {
       # options(future.globals.maxSize=2000*1024^2) # 2000mb limit may be needed
-      GDs <- predictGD(model, newdata = test_fold_data, verbose=verbose,
+      GDs <- predictGD(model,
+                       newdata = test_fold_data,
+                       verbose=verbose,
                        segmentation=segmentation,
                        segmentation_target=segmentation_target,
                        mask=mask,
                        afold=test_indices,
-                       subsample=subsample_,
                        resume=resume,
                        save_states=save_states,
                        loginfo=c(fold, state.dir))
+
       if (save_states){saveRDS(GDs, fold.gd.file)}
       # update and save status on the registry
       registry[2, fold] = TRUE
@@ -186,8 +188,9 @@ vbgamlss.cv <- function(image,
 
 predictGD <- function (object, newdata = NULL, verbose=F,
                        segmentation=NULL, segmentation_target=NULL,
-                       mask=NULL, afold=NULL, subsample=NULL,
-                       loginfo=c(fold, state.dir), resume=T, save_states=T, ...) {
+                       mask=NULL, afold=NULL,
+                       loginfo=c(fold, state.dir),
+                       resume=T, save_states=T, ...) {
   if (is.null(newdata)){stop("newdata is not set")}
   .fold = loginfo[1]
   .state.dir = loginfo[2]
@@ -203,11 +206,16 @@ predictGD <- function (object, newdata = NULL, verbose=F,
     cat(paste0(" Found fold predicted parameters, loading them"), fill=T)
     nfitted <- readRDS(fold.P.file)
   } else {
-    nfitted <- quite(predict.vbgamlss(object, newdata = newdata, ptype='parameter',
+    nfitted <- quite(
+                     predict.vbgamlss(object,
+                                      newdata = newdata,
+                                      ptype='parameter',
                                       segmentation=segmentation,
                                       segmentation_target=segmentation_target,
-                                      mask=mask, afold=afold,
-                                      subsample=subsample), skip=verbose)
+                                      mask=mask,
+                                      afold=afold
+                                      ),
+                     skip=verbose)
     if (save_states){saveRDS(nfitted, fold.P.file)}
   }
 
@@ -219,11 +227,17 @@ predictGD <- function (object, newdata = NULL, verbose=F,
     cat(paste0(" Found fold predicted parameters, loading them"), fill=T)
     resp <- readRDS(fold.R.file)
   } else {
-  resp <- quite(predict.vbgamlss(object, newdata = newdata, ptype='response',
+  resp <- quite(
+                predict.vbgamlss(object,
+                                 newdata = newdata,
+                                 ptype='response',
                                  segmentation=segmentation,
                                  segmentation_target=segmentation_target,
-                                 mask=mask, afold=afold,
-                                 subsample=subsample), skip=verbose)
+                                 mask=mask,
+                                 afold=afold
+                                 ),
+                skip=verbose)
+  # save state if needed
   if (save_states){saveRDS(resp, fold.R.file)}
   }
 

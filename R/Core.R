@@ -28,7 +28,6 @@
 #' @param num_cores Number of cores for parallel processing. If NULL, all available cores are used.
 #' @param chunk_max_mb Maximum chunk size in megabytes for processing. Defaults to 64 MB. Increase to 256/512 for HPC.
 #' @param afold Optional boolean or integer vector to subset imageframe for cross-validation folds.
-#' @param subsample (to be DEPRECATED) Optional numeric vector of voxel indices to subset the imageframe.
 #' @param debug Logical. If TRUE, enables debug mode to log output in `logdir`. Defaults to FALSE.
 #' @param logdir Directory path for saving logs if `debug` is TRUE. Defaults to current working directory.
 #' @param cache Logical, cache intermediate results.
@@ -55,7 +54,6 @@ vbgamlss <- function(imageframe,
                      num_cores=NULL,
                      chunk_max_mb=64,
                      afold=NULL,
-                     subsample=NULL,
                      debug=F, # toggle debugging
                      logdir=getwd(), # debug directory
                      cache=F, # save temporary states and force debug=T
@@ -92,7 +90,7 @@ vbgamlss <- function(imageframe,
   gc()
 
 
-  # subset the imageframe if the input is a fold from CV
+  # Subset the imageframe if the input is a fold from CV
   #   a fold must be a boolean vector of length of number of subjects (image 4th dim)
   if (!is.null(afold)){
     if (!is.logical(afold) && !is.integer(afold)) {
@@ -103,19 +101,18 @@ vbgamlss <- function(imageframe,
     train.data <- train.data[afold,]
   }
 
+  # DEPRCATED
+  # # subset the imageframe if a subsampling scheme is provided
+  # if (!is.null(subsample)){
+  #   if (!is.numeric(subsample)) {
+  #     stop("Error: subsample must be a numeric vector of indeces of length sum(mask>0).")
+  #   }
+  #   warning('Subsampling is going to be deprecated!')
+  #   voxeldata <- voxeldata[,subsample]
+  #   segmentation <- segmentation[,subsample]
+  # }
 
-  # subset the imageframe if a subsampling scheme is provided
-  if (!is.null(subsample)){
-    if (!is.numeric(subsample)) {
-      stop("Error: subsample must be a numeric vector of indeces of length sum(mask>0).")
-    }
-    warning('Subsampling is going to be deprecated!')
-    voxeldata <- voxeldata[,subsample]
-    segmentation <- segmentation[,subsample]
-  }
-
-
-  # parallel settings
+  # Parallel settings
   plan(strategy="future::cluster", workers=num_cores, rscript_libs=.libPaths())
   options(future.globals.maxSize=20000*1024^2)
   handlers(global = TRUE)
@@ -124,12 +121,12 @@ vbgamlss <- function(imageframe,
   future.opt <- list(packages=c('gamlss2'), seed = TRUE)
 
 
-  # compute chunk size
+  # Compute chunk size
   Nchunks <- estimate_nchunks(voxeldata, chunk_max_Mb=chunk_max_mb)
   chunked = as.list(isplitIndices(ncol(voxeldata), chunks=Nchunks))
 
 
-  # cache dir
+  # Cache dir
   if (cache) {
     cat(paste0('Caching'), fill=T)
     # exist?
@@ -152,14 +149,14 @@ vbgamlss <- function(imageframe,
     }
 
 
-  # log dir
+  # Log dir
   if (debug) {
     logdir=file.path(logdir, paste0('.voxlog.', rand_names(1, l=4)))
     dir.create(logdir, recursive = T, showWarnings = F)
   }
 
 
-  # loop chunks call
+  # Loop chunks call
   i = 1
   models <- list()
   for (ichunk in chunked){
@@ -170,13 +167,14 @@ vbgamlss <- function(imageframe,
     i <- i+1
 
 
-    # subset with chunk indexes
+    # Subset with chunk indexes
     voxeldata_chunked <- voxeldata[,ichunk]
     if (!is.null(segmentation)){voxelseg_chunked <- segmentation[,ichunk]}
 
 
-    # set up progress bar
+    # Set up progress bar per chunk
     p <- progressor(ncol(voxeldata_chunked))
+
 
     # Check cache, continue if submodels already computed
     if (cache){
@@ -189,15 +187,15 @@ vbgamlss <- function(imageframe,
     }
 
 
-    # parallel call to fit vbgamlss
+    # Parallel call to fit vbgamlss
     submodels <- foreach(vxlcol = seq_along(voxeldata_chunked),
                          .options.future = future.opt,
                          .combine=c
     ) %dofuture% {
-      # fit specific voxel
+      # Fit specific voxel
       vxl_train_data <- train.data
       vxl_train_data$Y <- as.numeric(voxeldata_chunked[,vxlcol])
-      # if multi tissue add
+      # If multi tissue fit
       if (!is.null(segmentation)){
         vxl_train_data$tissue <- voxelseg_chunked[,vxlcol]}
       if (! is.null(segmentation_target)){
@@ -205,17 +203,17 @@ vbgamlss <- function(imageframe,
       }
 
 
-      # debug
+      # Debug
       if (debug) {logfile=file.path(logdir, paste0('log.vxl', vxlcol))} else {logfile=NULL}
 
 
-      # force Y to be strictly non-negative & !=0
+      # Force Y to be strictly non-negative & !=0
       if (force_ypositivity){
-        non_negative = vxl_train_data$Y>0
+        non_negative = vxl_train_data$Y > 0
         vxl_train_data <- vxl_train_data[non_negative,]
       }
 
-      # gamlss
+      # GAMLSS
       g <- TRY(gamlss2::gamlss2(formula=as.formula(g.formula),
                                 data=vxl_train_data,
                                 family=g.family,
@@ -225,7 +223,7 @@ vbgamlss <- function(imageframe,
                                 maxit = c(300, 30),
                                 ...),
                logfile, save.env.and.stop=F)
-      g$control <- NULL
+      g$control <- NULL # remove control to save space
       g$family <- g$family$family # to re-set via gamlss2:::complete_family()
       g$vxl <- vxlcol
       p() # update progress bar

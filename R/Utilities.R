@@ -242,6 +242,7 @@ TRY <- function(expr, logfile=NULL, save.env.and.stop=F){
 
 
 ############################  R Package functions  ##############################
+
 # Print warning for missing ANTsR package
 .onAttach <- function(libname, pkgname) {
   list_ants_dependencies <- c("images2matrix",
