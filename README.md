@@ -137,7 +137,8 @@ map_model_predictions(
 |----------|-------------|
 | [`vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Core.R#L15) | Fit GAMLSS voxel/vertex-wise with optional segmentation and parallel processing. Process the data in chunks. |
 
-### Support
+
+### Support & Utility
 | Function | Description |
 |----------|-------------|
 | [`images2matrix`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L2) | Convert 4D NIfTI/list of 3D images to subject × voxel matrix. |
@@ -146,6 +147,9 @@ map_model_predictions(
 | [`load_model`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L22) | Load saved `vbgamlss` models from file.|
 | [`predict.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L32) | Predict parameters or responses from fitted models. |
 | [`zscore.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L147) | Compute per-voxel z-scores. |
+| [`restore_family`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L101) | For space efficiency reason, vbgamlss remove the distribution class from each submodel after fitting. use this function to restore it if needed (e.g. if you want to do custom operation on vbgamlss submodels). |
+| [`vbapply`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L118) | Apply a function to each voxel submodel in a vbgamlss object and return a vector. restore_family() is already included in each iteration before calling the custom function. |
+
 
 ### Mapping
 | Function | Description |
@@ -153,7 +157,8 @@ map_model_predictions(
 | [`map_model_coefficients`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L2) | Save per-voxel model coefficients to NIfTI images (e.g. β coeff. of a regression model as maps). |
 | [`map_model_predictions`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L52) | Save predicted parameters to NIfTI images (i.e. save μ,σ,ν,τ distribution coeff. as a maps). |
 | [`map_zscores`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L116) | Save z-score maps to NIfTI images. |
-| [`map_zscores_from_map`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L221) | Compute and save z-score directly from coefficients maps (i.e. after `map_model_predictions`). |
+| [`map_zscores_from_map`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Mapping.R#L168) | Compute and save z-score directly from coefficients maps (i.e. after `map_model_predictions`). |
+
 
 ### Cross-validation
 | Function | Description |
@@ -183,6 +188,7 @@ map_model_predictions(
 ## ⚠ Known Issues
 
 * It takes a long time to fit models voxel-wise.
+* pbmcappyly runs sequentially on some systems (i.e. Windows).
 * `vbgamlss.model_selection` currently does not generalize across all HPC systems 
 
 ---
@@ -194,6 +200,7 @@ map_model_predictions(
 | Function | Description |
 |----------|-------------|
 | [`vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Core.R#L15) | Fit GAMLSS voxel/vertex-wise with optional segmentation and parallel processing. |
+
 
 ### Cross-validation 
 | Function | Description |
@@ -208,6 +215,7 @@ map_model_predictions(
 | [`getCVGD.pen`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Cross_validation.R#L435) | Aggregate penalised global deviance across CV folds. |
 | [`getCVGD.all`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Cross_validation.R#L439) | Aggregate both penalised and unpenalised deviance. |
 | [`akaike_weights`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Cross_validation.R#L451) | Compute AIC/Akaike model weights. |
+
 
 ### Mapping
 | Function | Description |
@@ -230,6 +238,7 @@ map_model_predictions(
 | [`monitor_jobs`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Model_selection_system.R#L286) | Monitor jobs until completion. |
 | [`gather_jobs_outputs`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Model_selection_system.R#L368) | Collect outputs from all jobs. |
 
+
 ### Support
 | Function | Description |
 |----------|-------------|
@@ -237,13 +246,15 @@ map_model_predictions(
 | [`load_model`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L22) | Load saved `vbgamlss` models from file. |
 | [`predict.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L32) | Predict parameters or responses from fitted models. |
 | [`zscore.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L147) | Compute per-voxel z-scores. |
-| [`zscore.map.vbgamlss`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Support.R#L221) | Compute and save z-score maps. |
+
 
 ### Utilities
 | Function | Description |
 |----------|-------------|
 | [`images2matrix`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L2) | Convert 4D NIfTI/list of 3D images to subject × voxel matrix. |
 | [`load_input_image`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L40) | Load image/matrix from NIfTI, RDS, or data frame. |
+| [`restore_family`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L101) | For space efficiency reason, vbgamlss remove the distribution class from each submodel after fitting. use this function to restore it if needed (e.g. if you want to do custom operation on vbgamlss submodels). |
+| [`vbapply`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L118) | Apply a function to each voxel submodel in a vbgamlss object and return a vector. restore_family() is already included in each iteration before calling the custom function. |
 | [`estimate_nchunks`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L88) | Calculate chunks to fit memory constraints. |
 | [`get_subsample_indices`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L100) | Generate indices for subsampling. |
 | [`combine_formulas_gamlss2`](https://github.com/tmspvn/VBGAMLSS/blob/master/R/Utilities.R#L131) | Merge formulas for mu, sigma, nu, tau models. |

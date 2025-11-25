@@ -18,7 +18,7 @@ save_model <- function(model_list, filename, voxel=NULL) {
   if (is.null(voxel)) {
     saveRDS(model_list, file = glue(filename, ".vbgamlss"))
   } else {
-    warning("possibly not working as intended!")
+    warning("Untested, possibly not working as intended!")
     saveRDS(model_list[[voxel]], file = glue(filename, ".voxel{voxel}.vbgamlss"))
   }
   cat('Saved VBGAMLSS model to:', filename)

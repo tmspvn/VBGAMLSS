@@ -91,6 +91,57 @@ load_input_image <- function(image, mask=NULL){
 }
 
 
+
+
+#' Wrapper to reassign removed family() object from a vbgamlss fitted submodel
+#'
+#' @param fitted, vbgamlss fitted submodel,
+#' @return vbgamlss fitted submodel with family object included.
+#' @export
+restore_family <- function(fitted){
+  if (class(fitted$family) != "gamlss2.family"){
+    fitted$family <- gamlss2:::complete_family(fitted$family)
+  }
+  return(fitted)
+}
+
+
+
+#' Wrapper to apply a function to all submodels of a vbgamlss fitted object
+#'
+#' @param fitted A vbgamlss fitted model (list of submodels).
+#' @param AFUN The function to apply. eg. AIC(), kurtosis(), etc.
+#' @param num_cores Integer. Number of cores for parallel processing. Defaults to 1.
+#' @param ... Additional arguments passed to FUN.
+#' @return A list of outputs.
+#' @export
+vbapply <- function(fitted, AFUN, num_cores = 1L, ...) {
+
+  # Iterate over 'fitted' directly
+  subappl <- pbmcapply::pbmclapply(
+    X = fitted,
+    FUN = function(vxlgamlss) {
+
+      # Robust class check
+      if (inherits(vxlgamlss, "gamlss2")) {
+
+        # restore family
+        vxlgamlss <- restore_family(vxlgamlss)
+
+        # Apply function and return
+        return(AFUN(vxlgamlss, ...))
+
+      } else {
+        return(NA)
+      }
+    },
+    mc.cores = num_cores
+  )
+
+  return(subappl)
+}
+
+
 ########### NOT EXPORTED ###########
 
 estimate_nchunks <- function(object, from_files=F, chunk_max_Mb=256) {
@@ -136,8 +187,6 @@ if (!is.numeric(factor) && factor>0 && factor<=1) {
 
   return(indices)
 }
-
-
 
 
 

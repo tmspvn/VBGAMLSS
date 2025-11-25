@@ -74,18 +74,17 @@ vbgamlss <- function(imageframe,
 
 
   # Force character columns to factors
-  train.data <- as.data.frame(unclass(train.data), stringsAsFactors=TRUE)
+  train.data <- as.data.frame(train.data, stringsAsFactors=TRUE) # unclass(train.data)
 
 
   # Cores
   if (is.null(num_cores)) {num_cores <- availableCores()}
 
-
   # Input image: subjects (4th dim) x voxels (columns)
-  if (!is.data.frame(imageframe)) {
-    stop("Error: imageframe must be a data.frame! Use images2matrix(image, mask) to convert image to matrix.")
-    }
-  voxeldata <- imageframe
+  if (!is.data.frame(imageframe) && !is.matrix(imageframe)) {
+    stop("Error: imageframe must be a data.frame or matrix! Use images2matrix(image, mask) to convert image to matrix.")
+  }
+  voxeldata <- as.data.frame(imageframe)
 
 
   # Segmentation if provided
