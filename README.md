@@ -1,5 +1,5 @@
 
-<img src="logo.png" align="right" alt="vbgamlss logo" width="120" />
+<img src="logo.png" align="right" alt="vbgamlss logo" width="240" />
 
 # Voxel or Vertex-Wise GAMLSS for Normative Models
 
