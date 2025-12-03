@@ -223,8 +223,7 @@ vbgamlss <- function(imageframe,
                                 family=g.family,
                                 light=TRUE,
                                 trace=FALSE,
-                                CG = 100,
-                                maxit = c(300, 30),
+                                maxit = c(300, 100),
                                 ...),
                logfile, save.env.and.stop=F)
       g$control <- NULL # remove control to save space
