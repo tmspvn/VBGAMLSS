@@ -1,5 +1,7 @@
+
 <img src="logo.png" align="right" alt="vbgamlss logo" width="120" />
-# Fit GAMLSS Models Voxel or Vertex-Wise for Normative Modelling
+
+# Voxel or Vertex-Wise GAMLSS for Normative Models
 
 [![R](https://img.shields.io/badge/R-%3E%3D4.0.0-blue)](https://cran.r-project.org/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
