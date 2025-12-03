@@ -1,4 +1,6 @@
+<img src="vbgamlss_logo.png" align="left" height="30" width="30">
 # Fit GAMLSS Models Voxel or Vertex-Wise for Normative Modelling
+<br clear="left"/>
 
 [![R](https://img.shields.io/badge/R-%3E%3D4.0.0-blue)](https://cran.r-project.org/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
@@ -7,7 +9,6 @@
 
 ***VBGAMLSS*** fits ***Generalized Additive Models for Location, Scale and Shape*** voxel-wise or vertex-wise, designed for normative modelling in neuroimaging.
 VBGAMLSS is based on [gamlss2](https://gamlss-dev.github.io/gamlss2/), so it uses the same formula syntax.
-![Fit GAMLSS Models Voxel or Vertex-Wise for Normative Modelling](/vbgamlss_logo.png)
 ---
 
 
