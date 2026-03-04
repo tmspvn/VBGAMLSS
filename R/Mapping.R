@@ -114,43 +114,82 @@ map_model_predictions <- function(obj, mask, filename, index=NULL,
 #' @param filename Character prefix for output files. The function appends \code{"_subj-<ID>.zscore.nii.gz"}.
 #' @param index Optional integer vector of subject indices to export. If \code{NULL} (default), all subjects are exported.
 #' @param return_files Logical, if \code{TRUE} return the vector of written file paths. Default \code{FALSE}.
+#' @param output_3D Logical, if \code{FALSE} return an image per subject. Default \code{TRUE}.
 #' @export
 map_zscores <- function(zscores, mask, filename, index=NULL,
-                        return_files=FALSE){
-  if (class(zscores) != "vbgamlss.zscores") { stop("zscores must be of class vbgamlss.zscores")}
-  if (! is.null(index)) {cat(paste0('Mapping predictions index: ', list(index)), fill=T)}
+                        return_files=FALSE, output_4D=TRUE) {
 
-  # prepare usefull info
+  if (!inherits(zscores, "vbgamlss.zscores")) { stop("zscores must be of class vbgamlss.zscores")}
+  if (!is.null(index)) {cat(paste0('Mapping predictions index: ', list(index)), fill=T)}
+
+  # prepare useful info
   nvox <- length(zscores)
   first_vxl <- zscores[[1]]
+
   # save a subset?
   if (is.null(index)) {
     nsubj <- length(first_vxl)
-    subj = 1:nsubj # all
+    subj <- 1:nsubj # all
   } else {
-    subj = index # subset
-    nsubj = length(subj)
+    subj <- index # subset
+    nsubj <- length(subj)
   }
+
   # process
   z_mat <- matrix(nrow=nsubj, ncol=nvox)
   for (ic in 1:nvox) {
     # voxel #subjects
     z_mat[, ic] <- zscores[[ic]][subj]
   }
-  # convert mat to maps & save per subj
-  z_maps_images <- matrixToImages(z_mat, antsImageRead(mask, 3))
+
+  # convert mat to maps
+  mask_img <- antsImageRead(mask, 3)
+  z_maps_images <- matrixToImages(z_mat, mask_img)
+
   # save files
   fnames <- c()
-  for (ip in 1:length(z_maps_images)) {
-    fname <- paste0(filename,
-                    '_subj-', subj[ip],
-                    '.zscore.nii.gz')
-    antsImageWrite(z_maps_images[[ip]], fname)
-    fnames[ip] <- fname
+
+  if (output_4D) {
+    # --- Robust 4D Output Logic ---
+    dims_3d <- dim(mask_img)
+    n_images <- length(z_maps_images)
+
+    # 1. Allocate a 4D array and fill it with the 3D volumes
+    arr_4d <- array(0, dim = c(dims_3d, n_images))
+    for (i in 1:n_images) {
+      arr_4d[, , , i] <- as.array(z_maps_images[[i]])
+    }
+
+    # 2. Convert to ANTsImage
+    img_4d <- as.antsImage(arr_4d)
+
+    # 3. Carry over spatial headers (expand 3D metadata to 4D)
+    antsSetSpacing(img_4d, c(antsGetSpacing(mask_img), 1))
+    antsSetOrigin(img_4d, c(antsGetOrigin(mask_img), 0))
+
+    dir_3d <- antsGetDirection(mask_img)
+    dir_4d <- diag(4)
+    dir_4d[1:3, 1:3] <- dir_3d
+    antsSetDirection(img_4d, dir_4d)
+
+    # 4. Save
+    fname <- paste0(filename, '_subj-series.zscore.nii.gz')
+    antsImageWrite(img_4d, fname)
+    fnames <- fname
+
+  } else {
+    # --- 3D Output Logic (Original) ---
+    for (ip in 1:length(z_maps_images)) {
+      fname <- paste0(filename,
+                      '_subj-', subj[ip],
+                      '.zscore.nii.gz')
+      antsImageWrite(z_maps_images[[ip]], fname)
+      fnames[ip] <- fname
+    }
   }
+
   if (return_files) {return(fnames)}
 }
-
 
 
 
