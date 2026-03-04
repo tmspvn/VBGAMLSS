@@ -143,7 +143,7 @@ map_zscores <- function(zscores, mask, filename, index=NULL,
   fnames <- c()
   for (ip in 1:length(z_maps_images)) {
     fname <- paste0(filename,
-                    '_subj-', index[ip],
+                    '_subj-', subj[ip],
                     '.zscore.nii.gz')
     antsImageWrite(z_maps_images[[ip]], fname)
     fnames[ip] <- fname
