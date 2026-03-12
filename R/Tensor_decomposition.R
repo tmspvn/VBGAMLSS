@@ -264,30 +264,39 @@ save_tucker_results <- function(tucker_res, out_dir = ".", prefix = "", referenc
 #' @param tnsr_mask input rTensor mask.
 #' @param max_iter Numeric. Maximum number of iterations for the bi_tucker algorithm. Default is 500.
 #' @param tol Numeric. Relative Frobenius norm error tolerance for convergence. Default is 1e-5.
+#' @param opt Character. The metric to use for elbow optimization: "norm_percent" or "explained_energy".
 #'
-#' @return A list containing:
-#' \itemize{
-#'   \item{optimal}{A data frame row with the parameters of the detected elbow rank.}
-#'   \item{optimal_RMSE}{Numeric. The masked Root Mean Square Error at the optimal scale.}
-#'   \item{optimal_SMSE}{Numeric. The masked Standardized Mean Square Error at the optimal scale.}
-#'   \item{full_stats}{A data frame containing metrics for all tested scales.}
-#'   \item{tnsr_dim}{A numeric vector of the original tensor dimensions.}
-#' }
+#' @return A list containing optimal parameters and full statistics.
 #' @export
 estimate_optimal_tucker_rank <- function(tnsr,
                                          tnsr_mask,
                                          max_iter = 500,
-                                         tol = 1e-5) {
+                                         tol = 1e-5,
+                                         opt = "norm_percent") {
 
   # ============================================================================
-  # HELPER: FIND ELBOW -> should i normalize axes??
+  # HELPER: FIND ELBOW
   # ============================================================================
-  find_elbow_rank <- function(results_df, x_col = "total_params", y_col = "SMSE") {
+  find_elbow_rank <- function(results_df, x_col = "total_params", y_col = opt) {
+    # Validate the optimization column exists
+    if (!y_col %in% colnames(results_df)) {
+      stop(sprintf("Optimization metric '%s' not found in results.", y_col))
+    }
+
     results_df <- results_df[order(results_df[[x_col]]), ]
-    x <- results_df[[x_col]]; y <- results_df[[y_col]]
-    x1 <- x[1]; y1 <- y[1]; xn <- x[length(x)]; yn <- y[length(y)]
+    x <- results_df[[x_col]]
+    y <- results_df[[y_col]]
 
-    numerator <- abs((xn - x1) * (y1 - y) - (x1 - x) * (yn - y1))
+    # Min-Max Normalization of axes to [0,1]
+    # Crucial because total_params is vastly larger than percentage metrics
+    x_norm <- (x - min(x)) / (max(x) - min(x))
+    y_norm <- (y - min(y)) / (max(y) - min(y))
+
+    x1 <- x_norm[1]; y1 <- y_norm[1]
+    xn <- x_norm[length(x_norm)]; yn <- y_norm[length(y_norm)]
+
+    # Calculate geometric point-to-line distance on the normalized scale
+    numerator <- abs((xn - x1) * (y1 - y_norm) - (x1 - x_norm) * (yn - y1))
     denominator <- sqrt((xn - x1)^2 + (yn - y1)^2)
 
     results_df$elbow_distance <- numerator / denominator
@@ -322,9 +331,10 @@ estimate_optimal_tucker_rank <- function(tnsr,
       message(sprintf("  Scale %.2f | Ranks: %s", scale, paste(current_ranks, collapse="x")))
 
       tucker_res <- bi_tucker(tnsr = tnsr, mask = tnsr_mask, ranks = current_ranks,
-                                  max_iter = max_iter, tol = tol)
+                              max_iter = max_iter, tol = tol)
 
       expl_energy <- tucker_res$explained_energy * 100
+      norm_pct <- tucker_res$norm_percent # Extracted to fix missing variable bug
 
       # Safely extract residuals and compute RSS strictly within the mask
       res_data <- if(is(tucker_res$residuals, "Tensor")) tucker_res$residuals@data else tucker_res$residuals
@@ -342,6 +352,7 @@ estimate_optimal_tucker_rank <- function(tnsr,
         total_params = k,
         rank_str = paste(current_ranks, collapse="x"),
         explained_energy = expl_energy,
+        norm_percent = norm_pct, # Added to data frame
         MSE = tucker_res$MSE,
         RMSE = tucker_res$RMSE,
         SMSE = tucker_res$SMSE,
@@ -358,7 +369,7 @@ estimate_optimal_tucker_rank <- function(tnsr,
   message("--- Coarse Search---")
   coarse_scales <- seq(0.05, 0.95, by = 0.1)
   coarse_stats  <- evaluate_grid(coarse_scales)
-  coarse_optimal <- find_elbow_rank(coarse_stats)
+  coarse_optimal <- find_elbow_rank(coarse_stats, y_col=opt)
 
   message(sprintf(">> Coarse Elbow Scale: %.2f", coarse_optimal$scale))
 
@@ -380,10 +391,10 @@ estimate_optimal_tucker_rank <- function(tnsr,
   }
 
   final_stats <- final_stats[order(final_stats$scale), ]
-  true_optimal <- find_elbow_rank(final_stats)
+  true_optimal <- find_elbow_rank(final_stats, y_col=opt)
 
-  message(sprintf("\n>> FINAL Optimal Scale: %.2f | Explained Variance: %.2f%% | Masked RMSE: %.4f | Masked SMSE: %.4f",
-                  true_optimal$scale, true_optimal$explained_energy, true_optimal$RMSE, true_optimal$SMSE))
+  message(sprintf("\n>> FINAL Optimal Scale: %.2f | %s: %.2f%% | Masked RMSE: %.4f | Masked SMSE: %.4f",
+                  true_optimal$scale, opt, true_optimal[[opt]], true_optimal$RMSE, true_optimal$SMSE))
 
   # Return specific optimized values as separate list items for easy downstream access
   return(list(

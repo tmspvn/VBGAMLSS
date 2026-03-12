@@ -1,9 +1,15 @@
 #############################  cross validation  ###############################
-
-
-
-
-
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
+#
 
 
 
@@ -12,19 +18,19 @@ vbgamlss.cv <- function(image,
                         mask,
                         g.formula,
                         train.data,
-                        fold.var,
+                        fold.var, # vector of length Nsubjects with integers indicating fold di appartenenza
                         g.family = NO,
                         segmentation = NULL,
                         segmentation_target=NULL,
                         num_cores = NULL,
                         chunk_max_mb = 64,
-                        n_folds = 10,
                         k.penalty=NULL,
                         verbose=F,
                         debug=T,
                         logdir=getwd(),
                         return_all_GD=T,
-                        save_states=T, resume=T,
+                        save_states=T,
+                        resume=T,
                         ...) {
 
   cat(paste0("Starting"), fill=T)
@@ -33,11 +39,13 @@ vbgamlss.cv <- function(image,
     if (segmentation == 'NULL') {segmentation=NULL}}
   if (missing(image)) { stop("image is missing") }
   if (missing(mask)) { stop("mask is missing") }
-  if (missing(fold.var)) { stop("variable to use in the stratified CV is missing") }
+  if (missing(fold.var)) { stop("vector of legnth Nsubjects with integers indicating the fold is missing") }
   if (missing(g.formula)) { stop("formula is missing")}
   check_formula_LHS(g.formula)
   if (missing(train.data)) { stop("subjData is missing")}
 
+  # get length fold var
+  n_folds <- length(unique(fold.var))
 
   # states
   if (save_states) {
@@ -74,18 +82,9 @@ vbgamlss.cv <- function(image,
     cat(paste0("\nFound fold information, loading it"), fill=T)
     train.data$folds <- readRDS(fold.file)
   } else {
-    train.data$folds <- stratCVfolds(fold.var, k = n_folds)
+    train.data$folds <- fold.var
     if (save_states){saveRDS(train.data$folds, fold.file)}
   }
-
-  # DEPRECATED
-  # subsample?
-  # if (! is.null(subsample.factor)){
-  #   subsample_ <- get_subsample_indices(sum(antsImageRead(mask)>0),
-  #                                      subsample.type,
-  #                                      subsample.factor)
-  # } else {subsample_ <- NULL}
-
 
   # Prepare storage for results
   cvresults <- c()
@@ -292,6 +291,7 @@ predictGD <- function (object, newdata = NULL, verbose=F,
 
 
 
+
 # Test new fold Global Deviance
 testGD <- function(nfit, familyobj){
 
@@ -300,14 +300,14 @@ testGD <- function(nfit, familyobj){
   pfun <- paste("p", familyobj$family, sep = "")
   lpar <- length(familyobj$names)
 
-  # NaN check for params missfits
+  # NaN check for params missfits (ADDED MAE, LL, CLL)
   if (all(is.nan(nfit$y))) {
-    out <- list(TGD = NA, predictError = NA, resid = nfit$mu*NA)
+    out <- list(TGD = NA, predictError = NA, resid = nfit$mu*NA, MAE = NA, LL = NA, CLL = NA)
     return(out)
   }
-  # Na check for params missfits
+  # Na check for params missfits (ADDED MAE, LL, CLL)
   if (all(is.na(nfit$y))) {
-    out <- list(TGD = NA, predictError = NA, resid = nfit$mu*NA)
+    out <- list(TGD = NA, predictError = NA, resid = nfit$mu*NA, MAE = NA, LL = NA, CLL = NA)
     return(out)
   }
 
@@ -336,70 +336,68 @@ testGD <- function(nfit, familyobj){
 
   if (lpar == 1) {
     if (familyobj$family %in% .gamlss.bi.list) {
-      devi <- call(dfun, x = y1, mu = nfit$mu, bd = bd,
-                   log = TRUE)
+      devi <- call(dfun, x = y1, mu = nfit$mu, bd = bd, log = TRUE)
       ures <- call(pfun, q = y1, mu = nfit$mu, bd = bd)
-    }
-    else {
+    } else {
       devi <- call(dfun, x = y1, mu = nfit$mu, log = TRUE)
       ures <- call(pfun, q = y1, mu = nfit$mu)
     }
-  }
-  else if (lpar == 2) {
+  } else if (lpar == 2) {
     if (familyobj$family %in% .gamlss.bi.list) {
-      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
-                   bd = bd, log = TRUE)
-      ures <- call(pfun, q = y1, mu = nfit$nmu, sigma = nfit$sigma,
-                   bd = bd)
-    }
-    else {
-      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
-                   log = TRUE)
+      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma, bd = bd, log = TRUE)
+      ures <- call(pfun, q = y1, mu = nfit$nmu, sigma = nfit$sigma, bd = bd)
+    } else {
+      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma, log = TRUE)
       ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma)
     }
-  }
-  else if (lpar == 3) {
+  } else if (lpar == 3) {
     if (familyobj$family %in% .gamlss.bi.list) {
-      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
-                   nu = nfit$nu, bd = bd, log = TRUE)
-      ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma,
-                   nu = nfit$nu, bd = bd)
+      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu, bd = bd, log = TRUE)
+      ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu, bd = bd)
+    } else {
+      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu, log = TRUE)
+      ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu)
     }
-    else {
-      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
-                   nu = nfit$nu, log = TRUE)
-      ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma,
-                   nu = nfit$nu)
-    }
-  }
-  else {
+  } else {
     if (familyobj$family %in% .gamlss.bi.list) {
-      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
-                   nu = nfit$nu, tau = nfit$tau, bd = bd,
-                   log = TRUE)
-      ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma,
-                   nu = nfit$nu, tau = nfit$tau, bd = bd)
-    }
-    else {
-      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
-                   nu = nfit$nu, tau = nfit$tau, log = TRUE)
-      ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma,
-                   nu = nfit$nu, tau = nfit$tau)
+      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu, tau = nfit$tau, bd = bd, log = TRUE)
+      ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu, tau = nfit$tau, bd = bd)
+    } else {
+      devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu, tau = nfit$tau, log = TRUE)
+      ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu, tau = nfit$tau)
     }
   }
 
   Vresid <- qNO(eval(ures))
   dev <- -2 * sum(eval(devi))
 
+  # Mean Absolute Error (MAE)
+  vxl_mae <- mean(abs(y1 - nfit$mu), na.rm = TRUE)
+
+  # Extract observation-wise log-loss (negative log-likelihood) and CDF
+  ll_obs_raw <- -eval(devi)
+  cdf_vals <- eval(ures)
+
+  # Uncensored Mean Log-Loss (LL)
+  vxl_ll <- mean(ll_obs_raw, na.rm = TRUE)
+
+  # Censored Mean Log-Loss (CLL)
+  ll_obs_censored <- ll_obs_raw
+  ll_obs_censored[cdf_vals < 0.01 | cdf_vals > 0.99] <- -log(0.02)
+  vxl_cll <- mean(ll_obs_censored, na.rm = TRUE)
+
   # Recompose subsetted NaNs
   Vresid_na <- yisnan * NA
   Vresid_na[! yisnan] <- Vresid
 
   # output
-  out <- list(TGD = dev, predictError = dev/length(nfit$mu),
-              resid = Vresid_na)
+  out <- list(TGD = dev,
+              predictError = dev/length(nfit$mu),
+              resid = Vresid_na,
+              MAE = vxl_mae,
+              LL = vxl_ll,
+              CLL = vxl_cll)
   return(out)
-
 }
 
 
@@ -413,8 +411,13 @@ statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
   missfits <- sum(is.na(GDs))
   nsub <- length(GDs[[1]]$resid)
   nvxl <- length(GDs)
+
   TGDs <- numeric(nvxl) * NA
   predictErrors <- numeric(nvxl) * NA
+  MAEs <- numeric(nvxl) * NA
+  LLs <- numeric(nvxl) * NA
+  CLLs <- numeric(nvxl) * NA
+
   resids <- matrix(data=NA, nrow=nsub, ncol=nvxl)
   resids_4math <- c()
 
@@ -422,11 +425,17 @@ statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
     if (! is.na(GDs)[i]) {
       TGDs[i] <- GDs[[i]]$TGD
       predictErrors[i] <- GDs[[i]]$predictError
+      MAEs[i] <- GDs[[i]]$MAE
+      LLs[i] <- GDs[[i]]$LL
+      CLLs[i] <- GDs[[i]]$CLL
       resids[, i] <- GDs[[i]]$resid
       resids_4math <- c(resids_4math, GDs[[i]]$resid)
-       } else {
+    } else {
       TGDs[i] <- NA
       predictErrors[i] <- NA
+      MAEs[i] <- NA
+      LLs[i] <- NA
+      CLLs[i] <- NA
       resids[, i] <- NA
       resids_4math <- NA
     }
@@ -443,17 +452,31 @@ statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
     GDp = describe_stats(TGDs_pen, '')
   }
   PE = describe_stats(predictErrors, '')
+
+  # Summarize metrics across all voxels
+  MAE_stat = describe_stats(MAEs, '')
+  LL_stat = describe_stats(LLs, '')
+  CLL_stat = describe_stats(CLLs, '')
+
   resids_4math[is.infinite(resids_4math)] <- NA
   RS = describe_stats(resids_4math, '')
 
+  # return
   to_return = list(GD=GD, GDpen=GDp, predErr=PE, Resids=RS,
+                   MAE=MAE_stat, LL=LL_stat, CLL=CLL_stat,
                    missFits=missfits, missFitsPerc=missfits/length(GDs))
 
-  if (return_all_GD) {to_return <- append(to_return, list(allGD=TGDs,
-                                                          allPredErr=predictErrors,
-                                                          allResid=resids))}
+  if (return_all_GD) {
+    to_return <- append(to_return, list(allGD=TGDs,
+                                        allPredErr=predictErrors,
+                                        allMAE=MAEs,
+                                        allLL=LLs,
+                                        allCLL=CLLs,
+                                        allResid=resids))
+  }
   return(to_return)
 }
+
 
 
 
@@ -472,6 +495,22 @@ describe_stats <- function(x, vname) {
     eval(parse(text=paste0('out <- c(out,', fn, vname, ' = ', fn, vname, ')')))
   }
   return(out)
+}
+
+
+
+
+
+
+
+# Create leave-one-site/dataset-out cross-validation folds
+#' @export
+LOSOfolds <- function(df){
+  if (is.factor(df)){
+    return(as.integer(df))
+  } else {
+     errorCondition('input must be a factor.')
+    }
 }
 
 
@@ -552,6 +591,70 @@ getCVGD.all <- function(cvresults, penalized=F) {
 
 
 
+# Lazy get cross-validated Mean Absolute Error (MAE) from cvresults
+getCVMAE <- function(cvresults, term='mean') {
+  CVMAE = 0
+  for (fold in cvresults) {
+    # If the fold failed entirely, skip it to prevent crashing
+    if (!is.null(fold$MAE[[term]])) {
+      CVMAE <- CVMAE + fold$MAE[[term]]
+    }
+  }
+  # Note: A true cross-validated average MAE requires dividing by the number of folds
+  return(CVMAE / length(cvresults))
+}
+
+
+
+
+
+
+# Lazy get cross-validated Uncensored Log-Loss (LL) from cvresults
+getCVLL <- function(cvresults, term='mean') {
+  CVLL = 0
+  for (fold in cvresults) {
+    if (!is.null(fold$LL[[term]])) {
+      CVLL <- CVLL + fold$LL[[term]]
+    }
+  }
+  return(CVLL / length(cvresults))
+}
+
+
+
+
+
+
+# Lazy get cross-validated Censored Log-Loss (CLL) from cvresults
+getCVCLL <- function(cvresults, term='mean') {
+  CVCLL = 0
+  for (fold in cvresults) {
+    if (!is.null(fold$CLL[[term]])) {
+      CVCLL <- CVCLL + fold$CLL[[term]]
+    }
+  }
+  return(CVCLL / length(cvresults))
+}
+
+
+
+
+
+# (Optional) Lazy get ALL cross-validated metrics at once
+getCV_All_Metrics <- function(cvresults) {
+  out <- list()
+  for (t in c('mean', 'sd', 'quantile.0%', 'quantile.25%', 'quantile.50%',
+              'quantile.75%', 'quantile.100%', 'min', 'max')) {
+    out$GD[[t]] <- getCVGD(cvresults, term=t)
+    out$MAE[[t]] <- getCVMAE(cvresults, term=t)
+    out$LL[[t]] <- getCVLL(cvresults, term=t)
+    out$CLL[[t]] <- getCVCLL(cvresults, term=t)
+  }
+  return(out)
+}
+
+
+
 
 
 # Akaike weights from a vector of AICc or similar values
@@ -568,4 +671,316 @@ akaike_weights <- function(v){
 
 
 
+
+
+
+
+
+#===============================================================================
+#                                 TESTING                                      #
+#===============================================================================
+
+
+#' @export
+vbgamlss.nested_cv <- function(image,
+                               mask,
+                               g.formula,
+                               full.data,
+                               site.var, # <- dataset variables
+                               fold.var,
+                               g.family = NO,
+                               segmentation = NULL,
+                               segmentation_target=NULL,
+                               num_cores = NULL,
+                               chunk_max_mb = 64,
+                               n_folds = 10,
+                               k.penalty=NULL,
+                               verbose=F,
+                               debug=T,
+                               logdir=getwd(),
+                               return_all_GD=T,
+                               save_states=T,
+                               resume=T,
+                               ...) {
+
+  # Identify all unique sites for the Outer Loop (LOSO)
+  sites <- unique(full.data[[site.var]])
+  nested_results <- list()
+
+  for (site in sites) {
+    cat(paste0("\n=======================================================\n"), fill=T)
+    cat(paste0(" OUTER LOOP: Leaving out Dataset/Site '", site, "' for Testing"), fill=T)
+    cat(paste0("=======================================================\n"), fill=T)
+
+    # Split Data: Outer Train vs. Outer Test
+    train_indices <- full.data[[site.var]] != site
+    test_indices <- full.data[[site.var]] == site
+
+    outer_train_data <- full.data[train_indices, ]
+    outer_test_data <- full.data[test_indices, ]
+
+    # Create a site-specific directory to prevent state overwriting across outer loops
+    site_logdir <- file.path(logdir, paste0("Nested_LOSO_", site))
+    dir.create(site_logdir, recursive = TRUE, showWarnings = FALSE)
+
+    # ---------------------------------------------------------
+    # INNER LOOP: Run your existing k-fold CV on the outer training set
+    # ---------------------------------------------------------
+    cat(paste0("\n--- Starting Inner k-fold CV (Training Set Only) ---\n"), fill=T)
+    inner_cv_results <- vbgamlss.cv(image = image,
+                                    mask = mask,
+                                    g.formula = g.formula,
+                                    train.data = outer_train_data,
+                                    fold.var = fold.var,
+                                    logdir = site_logdir, # Saves .cvstates strictly inside this site's folder
+                                    save_states = save_states,
+                                    g.family = g.family,
+                                    segmentation = segmentation,
+                                    segmentation_target=segmentation_target,
+                                    num_cores = num_cores,
+                                    chunk_max_mb = chunk_max_mb,
+                                    n_folds = n_folds,
+                                    k.penalty = k.penalty,
+                                    verbose=F,
+                                    debug=T,
+                                    return_all_GD=T,
+                                    resume=T,
+                                    ...
+    )
+
+    # ---------------------------------------------------------
+    # OUTER FIT: Train a final model on the ENTIRE outer_train_data
+    # ---------------------------------------------------------
+    cat(paste0("\n--- Fitting Final Outer Model (All Training Sites) ---\n"), fill=T)
+    outer_model_file <- file.path(site_logdir, "final_outer_model.rds")
+
+    if (save_states && file.exists(outer_model_file)) {
+      cat("Found existing outer model, loading it...", fill=T)
+      outer_model <- readRDS(outer_model_file)
+    } else {
+      outer_model <- vbgamlss(
+        image = image,
+        mask = mask,
+        g.formula = as.formula(g.formula),
+        train.data = outer_train_data,
+        logdir = site_logdir,
+        afold = rep(TRUE, nrow(outer_train_data)), # Use all outer_train_data
+        ...
+      )
+      if (save_states) saveRDS(outer_model, outer_model_file)
+    }
+
+    # ---------------------------------------------------------
+    # OUTER TEST: Evaluate the final model on the Held-Out Site
+    # ---------------------------------------------------------
+    cat(paste0("\n--- Evaluating Model on Held-Out Site '", site, "' ---\n"), fill=T)
+    outer_gd_file <- file.path(site_logdir, "final_outer_GDs.rds")
+
+    if (save_states && file.exists(outer_gd_file)) {
+      cat("Found existing outer test statistics, loading them...", fill=T)
+      outer_GDs <- readRDS(outer_gd_file)
+    } else {
+      outer_GDs <- predictGD(
+        object = outer_model,
+        newdata = outer_test_data,
+        mask = mask,
+        afold = which(test_indices), # The row indices in the full dataset
+        loginfo = c(paste0("TestSite_", site), site_logdir),
+        save_states = save_states,
+        ...
+      )
+      if (save_states) saveRDS(outer_GDs, outer_gd_file)
+    }
+
+    # Summarize the outer test performance using your updated statGD function
+    outer_test_stats <- statGD(outer_GDs)
+
+    # ---------------------------------------------------------
+    # Store Results
+    # ---------------------------------------------------------
+    nested_results[[as.character(site)]] <- list(
+      Site = site,
+      N_Train = nrow(outer_train_data),
+      N_Test = nrow(outer_test_data),
+      Inner_CV = inner_cv_results,
+      Outer_Test = outer_test_stats
+    )
+
+    # Clean up heavy objects before next iteration
+    rm(outer_model, outer_GDs)
+    gc()
+  }
+
+  cat("\n=======================================================\n", fill=T)
+  cat(" Nested Cross-Validation Complete!", fill=T)
+  cat("=======================================================\n", fill=T)
+
+  return(nested_results)
+}
+
+
+
+
+#===============================================================================
+#                                 DEPRECATED                                   #
+#===============================================================================
+
+# Test new fold Global Deviance
+# testGD <- function(nfit, familyobj){
+#
+#   ## Internal of predictGD ##
+#   dfun <- paste("d", familyobj$family, sep = "")
+#   pfun <- paste("p", familyobj$family, sep = "")
+#   lpar <- length(familyobj$names)
+#
+#   # NaN check for params missfits
+#   if (all(is.nan(nfit$y))) {
+#     out <- list(TGD = NA, predictError = NA, resid = nfit$mu*NA)
+#     return(out)
+#   }
+#   # Na check for params missfits
+#   if (all(is.na(nfit$y))) {
+#     out <- list(TGD = NA, predictError = NA, resid = nfit$mu*NA)
+#     return(out)
+#   }
+#
+#   # subset NA
+#   yisnan <- is.nan(nfit$y)
+#   for (mtd in c('y', 'mu', 'sigma', 'nu', 'tau')[1:(lpar+1)]) {
+#     eval(parse(text=paste0('nfit$',mtd,' <- nfit$',mtd,'[! yisnan]')))
+#   }
+#
+#   # Compute TGD on cleaned data (code from GAMLSS)
+#   if (is.null(nfit$y))
+#     stop("the response variables is missing in the newdata")
+#
+#   if (familyobj$family %in% .gamlss.bi.list) {
+#     if (NCOL(nfit$y) == 1) {
+#       y1 <- nfit$y
+#       bd <- nfit$bd
+#     }
+#     else {
+#       bd <- nfit$y[, 1] + nfit$y[, 2]
+#       y1 <- nfit$y[, 1]
+#     }
+#   } else {
+#     y1 <- nfit$y
+#   }
+#
+#   if (lpar == 1) {
+#     if (familyobj$family %in% .gamlss.bi.list) {
+#       devi <- call(dfun, x = y1, mu = nfit$mu, bd = bd,
+#                    log = TRUE)
+#       ures <- call(pfun, q = y1, mu = nfit$mu, bd = bd)
+#     }
+#     else {
+#       devi <- call(dfun, x = y1, mu = nfit$mu, log = TRUE)
+#       ures <- call(pfun, q = y1, mu = nfit$mu)
+#     }
+#   }
+#   else if (lpar == 2) {
+#     if (familyobj$family %in% .gamlss.bi.list) {
+#       devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
+#                    bd = bd, log = TRUE)
+#       ures <- call(pfun, q = y1, mu = nfit$nmu, sigma = nfit$sigma,
+#                    bd = bd)
+#     }
+#     else {
+#       devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
+#                    log = TRUE)
+#       ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma)
+#     }
+#   }
+#   else if (lpar == 3) {
+#     if (familyobj$family %in% .gamlss.bi.list) {
+#       devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
+#                    nu = nfit$nu, bd = bd, log = TRUE)
+#       ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma,
+#                    nu = nfit$nu, bd = bd)
+#     }
+#     else {
+#       devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
+#                    nu = nfit$nu, log = TRUE)
+#       ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma,
+#                    nu = nfit$nu)
+#     }
+#   }
+#   else {
+#     if (familyobj$family %in% .gamlss.bi.list) {
+#       devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
+#                    nu = nfit$nu, tau = nfit$tau, bd = bd,
+#                    log = TRUE)
+#       ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma,
+#                    nu = nfit$nu, tau = nfit$tau, bd = bd)
+#     }
+#     else {
+#       devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma,
+#                    nu = nfit$nu, tau = nfit$tau, log = TRUE)
+#       ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma,
+#                    nu = nfit$nu, tau = nfit$tau)
+#     }
+#   }
+#
+#   Vresid <- qNO(eval(ures))
+#   dev <- -2 * sum(eval(devi))
+#
+#   # Recompose subsetted NaNs
+#   Vresid_na <- yisnan * NA
+#   Vresid_na[! yisnan] <- Vresid
+#
+#   # output
+#   out <- list(TGD = dev,
+#               predictError = dev/length(nfit$mu),
+#               resid = Vresid_na)
+#   return(out)
+#
+# }
+
+
+# # Summarize fold Global Deviance statistics
+# statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
+#   missfits <- sum(is.na(GDs))
+#   nsub <- length(GDs[[1]]$resid)
+#   nvxl <- length(GDs)
+#   TGDs <- numeric(nvxl) * NA
+#   predictErrors <- numeric(nvxl) * NA
+#   resids <- matrix(data=NA, nrow=nsub, ncol=nvxl)
+#   resids_4math <- c()
+#
+#   for (i in seq_len(nvxl)) {
+#     if (! is.na(GDs)[i]) {
+#       TGDs[i] <- GDs[[i]]$TGD
+#       predictErrors[i] <- GDs[[i]]$predictError
+#       resids[, i] <- GDs[[i]]$resid
+#       resids_4math <- c(resids_4math, GDs[[i]]$resid)
+#     } else {
+#       TGDs[i] <- NA
+#       predictErrors[i] <- NA
+#       resids[, i] <- NA
+#       resids_4math <- NA
+#     }
+#   }
+#
+#   # penalize TGDs
+#   if (! is.null(k.penalty)){
+#     TGDs_pen <- (k.penalty * deg.fre) - TGDs
+#   }
+#
+#   # statistics
+#   GD = describe_stats(TGDs, '')
+#   if (! is.null(k.penalty)){
+#     GDp = describe_stats(TGDs_pen, '')
+#   }
+#   PE = describe_stats(predictErrors, '')
+#   resids_4math[is.infinite(resids_4math)] <- NA
+#   RS = describe_stats(resids_4math, '')
+#
+#   to_return = list(GD=GD, GDpen=GDp, predErr=PE, Resids=RS,
+#                    missFits=missfits, missFitsPerc=missfits/length(GDs))
+#
+#   if (return_all_GD) {to_return <- append(to_return, list(allGD=TGDs,
+#                                                           allPredErr=predictErrors,
+#                                                           allResid=resids))}
+#   return(to_return)
+# }
 
