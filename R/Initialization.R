@@ -171,7 +171,7 @@ manifold_initialization <- function(imageframe,
 
 
 
-
+#' @export
 # == average initialization ==
 global_initialization <- function(imageframe,
                                    covs,

@@ -170,6 +170,7 @@ vbgamlss <- function(imageframe,
     # Subset with chunk indexes
     voxeldata_chunked <- voxeldata[, ichunk, drop = FALSE]
     if (!is.null(segmentation)){voxelseg_chunked <- segmentation[, ichunk, drop = FALSE]}
+    if (!is.null(warm_start)) {warm_start_chunked <- warm_start[ichunk, , drop = FALSE]}
 
     if (show_progress) { p <- progressr::progressor(ncol(voxeldata_chunked)) }
 
@@ -213,7 +214,7 @@ vbgamlss <- function(imageframe,
                                           # 3. Subset warm start safely
                                           vxl_start <- NULL
                                           if (!is.null(warm_start)) {
-                                            vxl_start <- warm_start[valid_idx, , drop = FALSE]
+                                            vxl_start <- warm_start_chunked[vxlcol, ]
                                           }
 
                                           logfile <- if (debug) file.path(logdir, paste0('log.vxl', vxlcol)) else NULL
@@ -233,7 +234,7 @@ vbgamlss <- function(imageframe,
                                           if (show_progress) { p() }
 
                                           # Error handling and deep environment stripping
-                                          if (inherits(g, "try-error") || is.na(g)) {
+                                          if (identical(g, NA)) {
                                             return(list(list(vxl = vxlcol, error = TRUE)))
                                           }
 
