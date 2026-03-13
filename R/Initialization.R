@@ -10,7 +10,7 @@
 #
 #
 #
-# == Low-dimensional parameter manifold initialization ==
+# == Low-dimensional parameter manifold / low-rank initialization ==
 # Obtain good voxel-wise initialization by learning a low-dimensional
 # relationship between voxel signal and fitted parameters using a small
 # set of fully fitted voxels.
@@ -18,6 +18,7 @@
 manifold_initialization <- function(imageframe,
                                     covs,
                                     g_formula,
+                                    g_family = SHASH,
                                     n_components = 5,
                                     n_clusters = 6,
                                     n_anchors = 500,       # Defaults to sqrt(voxels) if left NULL
@@ -97,7 +98,7 @@ manifold_initialization <- function(imageframe,
 
   D <- vbgamlss(imageframe = imageframe_anchors,
                      g.formula = g_formula,
-                     g.family = SHASH,
+                     g.family = g_family,
                      num_cores = num_threads,
                      train.data = covs,
                      ...
@@ -167,6 +168,50 @@ manifold_initialization <- function(imageframe,
 
   return(predicted_parameters)
 }
+
+
+
+
+# == average initialization ==
+global_initialization <- function(imageframe,
+                                   covs,
+                                   g_formula,
+                                   g_family = NO,
+                                   force_ypositivity = TRUE,
+                                   eps = 1e-5,
+                                   ...) {
+
+  # Calculate subject-wise mean and attach to covariates
+  covs$Y <- rowMeans(as.matrix(imageframe), na.rm = TRUE)
+
+  if (force_ypositivity) {
+    covs$Y[covs$Y <= 0] <- eps * 0.001
+  }
+
+  # Fit the global model
+  glob_fit <- gamlss2::gamlss2(formula = g_formula,
+                               data = covs,
+                               family = g_family,
+                               light = FALSE,
+                               maxit = c(300, 100),
+                               control = gamlss2::gamlss2_control(trace = FALSE, eps = eps))
+
+  unlisted_coeffs <- unlist(glob_fit$coefficients)
+  P_coefs <- length(unlisted_coeffs)
+  coef_names <- names(unlisted_coeffs)
+
+  predicted_parameters <- matrix(
+    unlisted_coeffs,
+    nrow = dim(imageframe)[2],
+    ncol = P_coefs,
+    byrow = TRUE
+  )
+
+  colnames(predicted_parameters) <- coef_names
+
+  return(predicted_parameters)
+}
+
 
 
 
@@ -367,30 +412,4 @@ multiresolution_initialization <- function(imageframe,
 
 
 
-# == average initialization ==
-average_initialization <- function(imageframe,
-                                     covs,
-                                     g_formula,
-                                     g_family = gamlss2::SHASH,
-                                     force_ypositivity = TRUE,
-                                     eps = 1e-5,
-                                     ...) {
 
-  # Calculate subject-wise mean and attach to covariates
-  covs$Y <- rowMeans(as.matrix(imageframe), na.rm = TRUE)
-
-  if (force_ypositivity) {
-    covs$Y[covs$Y <= 0] <- 1e-5
-  }
-
-  # Fit the global model
-  warm_fit <- gamlss2::gamlss2(formula = g_formula,
-                               data = covs,
-                               family = g_family,
-                               light = FALSE,
-                               trace = FALSE,
-                               maxit = c(300, 100),
-                               control = gamlss2::gamlss2_control(trace = FALSE, eps = eps))
-
-  return(as.data.frame(warm_fit$fitted.values))
-}
