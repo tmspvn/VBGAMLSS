@@ -4,7 +4,14 @@
 \alias{map_zscores}
 \title{Write voxel-wise z-score maps to NIfTI files}
 \usage{
-map_zscores(zscores, mask, filename, index = NULL, return_files = FALSE)
+map_zscores(
+  zscores,
+  mask,
+  filename,
+  index = NULL,
+  return_files = FALSE,
+  output_4D = TRUE
+)
 }
 \arguments{
 \item{zscores}{A \code{"vbgamlss.zscores"} object. Each list element corresponds to a voxel and contains a numeric vector of z-scores over subjects (consistent ordering across voxels).}
@@ -16,6 +23,8 @@ map_zscores(zscores, mask, filename, index = NULL, return_files = FALSE)
 \item{index}{Optional integer vector of subject indices to export. If \code{NULL} (default), all subjects are exported.}
 
 \item{return_files}{Logical, if \code{TRUE} return the vector of written file paths. Default \code{FALSE}.}
+
+\item{output_3D}{Logical, if \code{FALSE} return an image per subject. Default \code{TRUE}.}
 }
 \description{
 Convert per-voxel z-scores stored in a \code{"vbgamlss.zscores"} object into images and save one NIfTI file per subject.

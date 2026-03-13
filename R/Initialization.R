@@ -16,7 +16,7 @@
 # set of fully fitted voxels.
 #' @export
 manifold_initialization <- function(imageframe,
-                                    covs,
+                                    train_data,
                                     g_formula,
                                     g_family = SHASH,
                                     n_components = 5,
@@ -25,7 +25,7 @@ manifold_initialization <- function(imageframe,
                                     save_images = FALSE,   # Set to TRUE to save the NIfTI files
                                     donor_mask = NULL,     # path to donor mask nifti for saving coefs maps
                                     output_dir = getwd(),
-                                    num_threads = 10,
+                                    num_threads = NULL,
                                     ...) {
 
   # ---------------------------------------------------------
@@ -47,7 +47,6 @@ manifold_initialization <- function(imageframe,
   # Run PCA ONCE
   pca_result <- prcomp(signal_matrix_t, center = TRUE, scale. = FALSE, rank. = n_components)
   latent_signals <- pca_result$x
-  cat(summary(pca_result))
 
   # Fast Clustering
   set.seed(42)
@@ -97,12 +96,12 @@ manifold_initialization <- function(imageframe,
   imageframe_anchors <- imageframe[, anchor_indices, drop = FALSE]
 
   D <- vbgamlss(imageframe = imageframe_anchors,
-                     g.formula = g_formula,
-                     g.family = g_family,
-                     num_cores = num_threads,
-                     train.data = covs,
-                     ...
-                     )
+                g.formula = g_formula,
+                g.family = g_family,
+                num_cores = num_threads,
+                train.data = train_data,
+                ...
+  )
 
   # Extract Coefficients Dynamically
   unlisted_coeffs <- unlist(D[[1]]$coefficients)
@@ -171,30 +170,31 @@ manifold_initialization <- function(imageframe,
 
 
 
+
+
 #' @export
 # == average initialization ==
 global_initialization <- function(imageframe,
-                                   covs,
-                                   g_formula,
-                                   g_family = NO,
-                                   force_ypositivity = TRUE,
-                                   eps = 1e-5,
-                                   ...) {
-
+                                  train_data,
+                                  g_formula,
+                                  g_family = NO,
+                                  force_ypositivity = TRUE,
+                                  eps = 1e-5,
+                                  ...) {
   # Calculate subject-wise mean and attach to covariates
-  covs$Y <- rowMeans(as.matrix(imageframe), na.rm = TRUE)
+  train_data$Y <- rowMeans(as.matrix(imageframe), na.rm = TRUE)
 
   if (force_ypositivity) {
-    covs$Y[covs$Y <= 0] <- eps * 0.001
+    train_data$Y[train_data$Y <= 0] <- eps * 0.001
   }
 
   # Fit the global model
   glob_fit <- gamlss2::gamlss2(formula = g_formula,
-                               data = covs,
+                               data = train_data,
                                family = g_family,
                                light = FALSE,
                                maxit = c(300, 100),
-                               control = gamlss2::gamlss2_control(trace = FALSE, eps = eps))
+                               control = gamlss2::gamlss2_control(trace = TRUE, eps = eps))
 
   unlisted_coeffs <- unlist(glob_fit$coefficients)
   P_coefs <- length(unlisted_coeffs)

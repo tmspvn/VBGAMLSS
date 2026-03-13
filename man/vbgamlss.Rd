@@ -19,6 +19,10 @@ vbgamlss(
   cache = F,
   cachedir = getwd(),
   force_ypositivity = T,
+  warm_start = NULL,
+  show_progress = T,
+  eps = 1e-05,
+  maxit = c(300, 100),
   ...
 )
 }
