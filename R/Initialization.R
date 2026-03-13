@@ -14,7 +14,7 @@
 # Obtain good voxel-wise initialization by learning a low-dimensional
 # relationship between voxel signal and fitted parameters using a small
 # set of fully fitted voxels.
-
+#' @export
 manifold_initialization <- function(imageframe,
                                     covs,
                                     g_formula,
