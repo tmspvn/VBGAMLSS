@@ -70,6 +70,7 @@ vbgamlss <- function(imageframe,
                       show_progress=T,
                       eps=1e-5,
                       maxit=c(100, 33),
+                      future_plan_strategy = "future.mirai::mirai_cluster",
                       ...) {
 
   # checks
@@ -112,11 +113,8 @@ vbgamlss <- function(imageframe,
   # ---------------------------------------------------------
   # SAFE PARALLEL SETUP (Master Node)
   # ---------------------------------------------------------
-  # Capture the current future plan and guarantee restoration
-  old_plan <- future::plan()
-  on.exit(future::plan(old_plan), add = TRUE)
-
-  future::plan(strategy="future::cluster", workers=num_cores)
+  mirai::daemons(num_cores)
+  future::plan(strategy=future_plan_strategy, workers=num_cores)
   options(future.globals.maxSize=20000*1024^2)
   # ---------------------------------------------------------
 
