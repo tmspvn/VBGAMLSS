@@ -22,7 +22,8 @@ vbgamlss(
   warm_start = NULL,
   show_progress = T,
   eps = 1e-05,
-  maxit = c(300, 100),
+  maxit = c(100, 33),
+  future_plan_strategy = "future.mirai::mirai_cluster",
   ...
 )
 }
