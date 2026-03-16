@@ -69,7 +69,7 @@ vbgamlss <- function(imageframe,
                       warm_start=NULL, # per voxel by param
                       show_progress=T,
                       eps=1e-5,
-                      maxit=c(300, 100),
+                      maxit=c(100, 33),
                       ...) {
 
   # checks
@@ -164,7 +164,7 @@ vbgamlss <- function(imageframe,
   for (i in seq_along(chunked)) {
     ichunk <- chunked[[i]]
 
-    cat(paste0("Chunk: ", i, "/", Nchunks, "\n"))
+    cat(paste0("Chunk: ", i, "/", Nchunks, format(Sys.time(), " (%X, %d %b %Y)"),"\n"))
     chunk_id = file.path(cachedir, paste0('.voxchunk.', i))
 
     # Subset with chunk indexes
@@ -196,60 +196,60 @@ vbgamlss <- function(imageframe,
                                         # Use tryCatch to guarantee restoration even if gamlss2 fails
                                         worker_result <- tryCatch({
 
-                                          # 1. Determine valid row indices based on positivity and segmentation target
-                                          Y_vxl <- as.numeric(voxeldata_chunked[, vxlcol])
-                                          valid_idx <- rep(TRUE, length(Y_vxl))
+                                              # Determine valid row indices based on positivity and segmentation target
+                                              Y_vxl <- as.numeric(voxeldata_chunked[, vxlcol])
+                                              valid_idx <- rep(TRUE, length(Y_vxl))
 
-                                          if (force_ypositivity) {
-                                            valid_idx <- valid_idx & (Y_vxl > 0)
-                                          }
-                                          if (!is.null(segmentation) && !is.null(segmentation_target)) {
-                                            valid_idx <- valid_idx & (voxelseg_chunked[, vxlcol] == segmentation_target)
-                                          }
+                                              if (force_ypositivity) {
+                                                valid_idx <- valid_idx & (Y_vxl > 0)
+                                              }
+                                              if (!is.null(segmentation) && !is.null(segmentation_target)) {
+                                                valid_idx <- valid_idx & (voxelseg_chunked[, vxlcol] == segmentation_target)
+                                              }
 
-                                          # 2. Subset data vectors matching the exact rows kept
-                                          vxl_train_data <- train.data[valid_idx, , drop = FALSE]
-                                          vxl_train_data$Y <- Y_vxl[valid_idx]
+                                              # Subset data vectors matching the exact rows kept
+                                              vxl_train_data <- train.data[valid_idx, , drop = FALSE]
+                                              vxl_train_data$Y <- Y_vxl[valid_idx]
 
-                                          # 3. Subset warm start safely
-                                          vxl_start <- NULL
-                                          if (!is.null(warm_start)) {
-                                            vxl_start <- warm_start_chunked[vxlcol, ]
-                                          }
+                                              # Subset warm start safely
+                                              vxl_start <- NULL
+                                              if (!is.null(warm_start)) {
+                                                vxl_start <- warm_start_chunked[vxlcol, ]
+                                              }
 
-                                          logfile <- if (debug) file.path(logdir, paste0('log.vxl', vxlcol)) else NULL
+                                              logfile <- if (debug) file.path(logdir, paste0('log.vxl', vxlcol)) else NULL
 
-                                          # GAMLSS with Warm Start implementation
-                                          g <- TRY(gamlss2::gamlss2(formula = g_form_parsed,
-                                                                    data = vxl_train_data,
-                                                                    family = g.family,
-                                                                    light = TRUE,
-                                                                    trace = FALSE,
-                                                                    start = vxl_start,
-                                                                    maxit = maxit,
-                                                                    control=gamlss2::gamlss2_control(trace = FALSE, eps = eps),
-                                                                    ...),
-                                                   logfile, save.env.and.stop = F)
+                                              # GAMLSS
+                                              g <- TRY(gamlss2::gamlss2(formula = g_form_parsed,
+                                                                        data = vxl_train_data,
+                                                                        family = g.family,
+                                                                        start = vxl_start,
+                                                                        maxit = maxit,
+                                                                        control=gamlss2::gamlss2_control(trace = FALSE,
+                                                                                                         light = TRUE,
+                                                                                                         eps = eps),
+                                                                        ...),
+                                                       logfile, save.env.and.stop = F)
 
-                                          if (show_progress) { p() }
+                                              if (show_progress) { p() }
 
-                                          # Error handling and deep environment stripping
-                                          if (identical(g, NA)) {
-                                            return(list(list(vxl = vxlcol, error = TRUE)))
-                                          }
+                                              # Error handling and deep environment stripping
+                                              if (identical(g, NA)) {
+                                                return(list(list(vxl = vxlcol, error = TRUE)))
+                                              }
 
-                                          g$control <- NULL
-                                          g$converged <- g$iterations < maxit[1L]
-                                          g$family <- g$family$family
-                                          g$vxl <- vxlcol
+                                              g$control <- NULL
+                                              g$converged <- g$iterations < maxit[1L]
+                                              g$family <- g$family$family
+                                              g$vxl <- vxlcol
 
-                                          # Break environment closures to prevent massive IPC memory bloat
-                                          if (!is.null(g$terms)) environment(g$terms) <- globalenv()
-                                          if (!is.null(g$formula)) environment(g$formula) <- globalenv()
-                                          g$call <- NULL
-                                          g$fake_formula <- NULL
+                                              # Break environment closures to prevent massive IPC memory bloat
+                                              if (!is.null(g$terms)) environment(g$terms) <- globalenv()
+                                              if (!is.null(g$formula)) environment(g$formula) <- globalenv()
+                                              g$call <- NULL
+                                              g$fake_formula <- NULL
 
-                                          list(g)
+                                              list(g)
 
                                         }, finally = {
                                           # This block ALWAYS runs, guaranteeing the worker resets to normal
