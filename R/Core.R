@@ -333,6 +333,30 @@ vbgamlss <- function(imageframe,
     train.data <- train.data[afold, , drop=FALSE]
   }
 
+  # -----------------------------------------------------------
+  # SAFE PARALLEL SETUP (Master Node) to be reset at each chunk
+  # -----------------------------------------------------------
+  if (any(grepl("mirai", future_plan_strategy))) {
+    mirai::daemons(num_cores)
+    future::plan(strategy=future_plan_strategy)
+    show_progress <- F
+  } else {
+    future::plan(strategy=future_plan_strategy, workers=num_cores, master = "127.0.0.1")
+  }
+  options(future.globals.maxSize=20000*1024^2)
+  # make sure to avoid exporting massive stuff
+  future.opt <- list(packages=c('gamlss2'),
+                     seed = TRUE,
+                     globals = structure(TRUE,
+                                         ignore = "voxeldata")
+  )
+  # progressr
+  if (show_progress) {
+    progressr::handlers(global = TRUE)
+    progressr::handlers("pbmcapply")
+  }
+  # ---------------------------------------------------------
+
   # Compute chunk size
   Nchunks <- estimate_nchunks(voxeldata, chunk_max_Mb=chunk_max_mb)
   chunked = as.list(itertools::isplitIndices(ncol(voxeldata), chunks=Nchunks))
@@ -380,30 +404,6 @@ vbgamlss <- function(imageframe,
       models[[i]] <- readRDS(chunk_id)
       next
     }
-
-    # -----------------------------------------------------------
-    # SAFE PARALLEL SETUP (Master Node) to be reset at each chunk
-    # -----------------------------------------------------------
-    if (any(grepl("mirai", future_plan_strategy))) {
-      mirai::daemons(num_cores)
-      future::plan(strategy=future_plan_strategy)
-      show_progress <- F
-    } else {
-      future::plan(strategy=future_plan_strategy, workers=num_cores)
-    }
-    options(future.globals.maxSize=20000*1024^2)
-    # make sure to avoid exporting massive stuff
-    future.opt <- list(packages=c('gamlss2'),
-                       seed = TRUE,
-                       globals = structure(TRUE,
-                                           ignore = "voxeldata")
-    )
-    # progressr
-    if (show_progress) {
-      progressr::handlers(global = TRUE)
-      progressr::handlers("pbmcapply")
-    }
-    # ---------------------------------------------------------
 
 
     # Subset with chunk indexes
@@ -506,16 +506,6 @@ vbgamlss <- function(imageframe,
     # Assign directly to pre-allocated list slot
     models[[i]] <- submodels
     gc()
-
-    # ---------------------------------------------------------
-    # CLEAN TEARDOWN (Kill Daemons)
-    # ---------------------------------------------------------
-    if (any(grepl("mirai", future_plan_strategy))) {
-      mirai::daemons(0) # Force-closes the mirai background processes
-    }
-    future::plan(future::sequential) # Resets the future plan to release ports/connections
-    # ---------------------------------------------------------
-
   }
 
   gc()
