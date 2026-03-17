@@ -341,12 +341,13 @@ vbgamlss <- function(imageframe,
     future::plan(strategy=future_plan_strategy)
     show_progress <- F
   } else {
-    future::plan(strategy=future_plan_strategy, workers=num_cores, master = "127.0.0.1")
+    future::plan(strategy=future_plan_strategy, workers=num_cores)
   }
   options(future.globals.maxSize=20000*1024^2)
   # make sure to avoid exporting massive stuff
   future.opt <- list(packages=c('gamlss2'),
                      seed = TRUE,
+                     scheduling=10.0,
                      globals = structure(TRUE,
                                          ignore = "voxeldata")
   )
@@ -355,6 +356,9 @@ vbgamlss <- function(imageframe,
     progressr::handlers(global = TRUE)
     progressr::handlers("pbmcapply")
   }
+
+  master_blas <- RhpcBLASctl::blas_get_num_procs()
+  master_omp  <- RhpcBLASctl::omp_get_max_threads()
   # ---------------------------------------------------------
 
   # Compute chunk size
@@ -498,7 +502,9 @@ vbgamlss <- function(imageframe,
                                     g$call <- NULL
                                     g$fake_formula <- NULL
 
-                                    g
+                                    RhpcBLASctl::blas_set_num_threads(master_blas)
+                                    RhpcBLASctl::omp_set_num_threads(master_omp)
+                                    return(g)
                                   }
 
     if (cache){saveRDS(submodels, chunk_id)}
