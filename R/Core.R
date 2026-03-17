@@ -274,7 +274,7 @@ vbgamlss2 <- function(imageframe,
 #  TESTING VERSIONS  #
 # ================== #
 
-
+#' @export
 vbgamlss <- function(imageframe,
                       g.formula,
                       train.data,
