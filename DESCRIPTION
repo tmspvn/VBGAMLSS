@@ -1,6 +1,6 @@
 Package: VBGAMLSS
 Title: Fit GAMLSS models voxel-wise for normative modelling
-Version: 0.0.1.0000
+Version: 0.0.2.0000
 Authors@R: 
     person("Tommaso", "{Pavan", , "tommaso.pavan@chuv.ch", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0002-3436-6882"))
@@ -21,7 +21,9 @@ Imports:
     gamlss.dist,
     parallelly,
     RhpcBLASctl,
-    ranger
+    ranger,
+    qs2,
+    future.mirai
 BugReports: https://github.com/tmspvn/VBGAMLSS/issues
 URL: https://github.com/tmspvn/VBGAMLSS
 Suggests: 
