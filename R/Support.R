@@ -16,10 +16,10 @@
 save_model <- function(model_list, filename, voxel=NULL) {
   # save
   if (is.null(voxel)) {
-    saveRDS(model_list, file = glue(filename, ".vbgamlss"))
+    qs2::qs_save(model_list, file = glue(filename, ".vbgamlss"))
   } else {
     warning("Untested, possibly not working as intended!")
-    saveRDS(model_list[[voxel]], file = glue(filename, ".voxel{voxel}.vbgamlss"))
+    qs2::qs_save(model_list[[voxel]], file = glue(filename, ".voxel{voxel}.vbgamlss"))
   }
   cat('Saved VBGAMLSS model to:', filename)
 }
@@ -32,7 +32,7 @@ save_model <- function(model_list, filename, voxel=NULL) {
 #' @export
 load_model <- function(filepath) {
   # load
-  return(structure(readRDS(filepath), class = "vbgamlss"))
+  return(structure(qs2::qs_read(filepath), class = "vbgamlss"))
 }
 
 

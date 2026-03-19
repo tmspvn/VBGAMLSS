@@ -24,6 +24,8 @@ itertools
 pbmcapply
 progressr
 tibble
+qs2
+future.mirai
 ```
 
 ---
@@ -42,6 +44,9 @@ install.packages(
   repos = c("https://gamlss-dev.R-universe.dev", 
             "https://cloud.R-project.org")
 )
+
+# qs2: quick serialization 2
+remotes::install_cran("qs2", type = "source", configure.args = "--with-simd=AVX2")
 
 # Note for vertex based data ANTsR is not mandatory
 devtools::install_github("ANTsX/ANTsR")

@@ -59,10 +59,10 @@ load_input_image <- function(image, mask=NULL){
     # check if file exist
     if (!file.exists(image)) {stop("Image file does not exist.")}
 
-    # try load rds?
+    # try load qs2?
     is_rds <- tryCatch({
-              voxeldata <- readRDS(image)
-              cat("loading RDS file, mask is ignored.")
+              voxeldata <- qs2::qs_read(image)
+              cat("loading QS2 file, mask is ignored.")
               TRUE
             }, error = function(e){F})
 
@@ -274,7 +274,7 @@ TRY <- function(expr, logfile=NULL, save.env.and.stop=F){
                             *save.env.and.stop* is set to TRUE')
                          }
                      }
-                     g <- NA # missfit
+                     g <- c(NA, e$message) # missfit
                    },
                   warning = function(w) {
                     if (!is.null(logfile)){
