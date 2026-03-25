@@ -180,6 +180,15 @@ vbgamlss.cv <- function(imageframe,
     gc()
   }
 
+  # Give a name to each fold
+  names(cvresults) <- paste0("fold", seq_along(cvresults))
+
+  # save the final result
+  if (save_states){
+    cvres_filepath <- paste0(state.dir, 'vbgamlss.cvresults')
+    qs2::qs_save(cvresults, file = cvres_filepath)
+    cat('Saved CV results: ', cvres_filepath, '\n')
+  }
 
   return(cvresults)
 }
