@@ -274,7 +274,7 @@ TRY <- function(expr, logfile=NULL, save.env.and.stop=F){
                             *save.env.and.stop* is set to TRUE')
                          }
                      }
-                     g <- c(NA, e$message) # missfit
+                     g <- NA # missfit
                    },
                   warning = function(w) {
                     if (!is.null(logfile)){

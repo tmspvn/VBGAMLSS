@@ -7,6 +7,7 @@
 
 
 
+# ------------------------------------------------------------------------------
 #' Save VBGAMLSS models from files with the specified prefix.
 #'
 #' @param model_list vbgamlss fitted model.
@@ -25,6 +26,10 @@ save_model <- function(model_list, filename, voxel=NULL) {
 }
 
 
+
+
+
+# ------------------------------------------------------------------------------
 #' Load VBGAMLSS models from files with the specified prefix.
 #'
 #' @param filepath path to serialized model.
@@ -36,6 +41,10 @@ load_model <- function(filepath) {
 }
 
 
+
+
+
+# ------------------------------------------------------------------------------
 #' Predict method for vbgamlss objects
 #'
 #' @param object vbgamlss object to make predictions from.
@@ -46,100 +55,130 @@ load_model <- function(filepath) {
 #' @param segmentation Optional image/path with region labels.
 #' @param segmentation_target Optional. Integer to evaluate (eg 1).
 #' @param afold Optional. Integer, fold index when predicting CV folds (for internal use).
-#' @param subsample Optional integer vector of subject indices to predict.
 #' @param ... Additional arguments passed to the predict.gamlss2 function.
 #' @return A structure containing predictions.
+#' @import future.apply
+#' @import future
 #' @export
-predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parameter',
-                             segmentation=NULL, segmentation_target=NULL,
-                             afold=NULL, subsample=NULL,
+predict.vbgamlss <- function(object,
+                             newdata=NULL,
+                             num_cores=NULL,
+                             ptype='parameter',
+                             segmentation=NULL,
+                             segmentation_target=NULL,
+                             afold=NULL,
+                             terms = NULL,
+                             what = NULL,
                              ...){
-  if (missing(object)) { stop("vbgamlss is missing")}
-  if (is.null(num_cores)) {num_cores <- availableCores()}
 
+  if (missing(object)) { stop("vbgamlss object is missing")}
+  if (is.null(num_cores)) {num_cores <- future::availableCores()}
 
   # check segmentation
   if (!is.null(segmentation)){
-    if (!is.data.frame(segmentation)) {stop("Error: segmentaion must be a data.frame")}
+    if (!is.data.frame(segmentation) && !is.matrix(segmentation)) {
+      stop("Error: segmentation must be a data.frame or matrix")
+    }
   }
 
-
   # subset the dataframe if the input is a fold from CV
-  #   a fold must be a boolean vector of length of number of subjects (image 4th dim)
   if (!is.null(afold)){
     if (!is.logical(afold) && !is.integer(afold)) {
       stop("Error: afold must be either logical or integer vector.")
     }
-    segmentation <- segmentation[afold,]
+    if (!is.null(segmentation)) segmentation <- segmentation[afold, , drop=FALSE]
   }
 
-
-  # subset the dataframe if a subsampling scheme is provided
-  if (!is.null(subsample)){
-    if (!is.numeric(subsample)) {
-      stop("Error: subsample must be a numeric vector of indeces of length sum(mask>0).")
-    }
-    segmentation <- segmentation[,subsample]
-  }
-
+  # This works perfectly because the master session knows the S3 method
+  fname <- as.character(object[[1]]$family)
+  familyobj <- gamlss2:::complete_family(get(fname))
 
   # compute chunk size
   Nchunks <- estimate_nchunks(object)
 
+  # predict setup
+  future::plan(strategy="future::cluster", workers=num_cores)
 
-  # predict
-  plan(strategy="future::cluster", workers=num_cores)
-  future.opt <- list(packages=c('gamlss2', 'gamlss'))
-  fname <- as.character(object[[1]]$family)
-  familyobj <- gamlss2:::complete_family(get(fname))
-  predictions <- c()
-  chunked = as.list(isplitVector(object, chunks=Nchunks))
+  # split indices to match Core.R chunking
+  chunked_indices <- as.list(itertools::isplitIndices(length(object), chunks=Nchunks))
+
+  # Pre-allocate the predictions list
+  predictions <- vector("list", length(object))
 
   # chunks loop
-  i = 1
-  for (chunk in chunked){
-    cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
-    i<- i+1
+  for (i in seq_along(chunked_indices)){
+    idx_chunk <- chunked_indices[[i]]
+    cat(paste0("Chunk: ", i, "/", Nchunks, " (Predicting)\n"))
 
-    # parallel call
-    subpr <- pbmclapply(seq(length(chunk)),
-                        function(i) {
-                          vxlgamlss <- chunk[[i]]
+    # Extract ONLY the raw bytes for this chunk in the master session.
+    # .subset2 bypasses the S3 method, keeping them as lightweight raw bytes.
+    chunk_raw_bytes <- lapply(idx_chunk, function(idx) .subset2(object, idx))
 
-                          # process only if properly fitted else NA
-                          if ("gamlss2" %in% class(vxlgamlss)) {
+    # parallel call using future_lapply
+    subpr <- future.apply::future_lapply(seq_along(chunk_raw_bytes), function(k) {
 
-                            # recon family object
-                            vxlgamlss$family <- familyobj
+      # Grab the raw bytes for this specific worker
+      raw_data <- chunk_raw_bytes[[k]]
 
-                            # if multi tissue add
-                            newdata_ <- newdata
-                            if (!is.null(segmentation)){
-                              newdata_$tissue <- segmentation[,i]
-                              if (! is.null(segmentation_target)){
-                                newdata_ <-  newdata_[newdata_$tissue == segmentation_target,]
-                              }}
+      # Explicitly deserialize inside the worker, bypasses the S3 inheritance problem.
+      if (is.null(raw_data)) return(NA)
+      vxlgamlss <- qs2::qs_deserialize(raw_data)
 
-                            # predict
-                            l <- as.list(predict(vxlgamlss,
-                                                 newdata = newdata_,
-                                                 type=ptype,
-                                                 ...))
-                            l$family <- fname
-                            l$vxl <- vxlgamlss$vxl
-                            l
-                          } else {
-                            NA
-                          }
-                        },
-                        mc.cores=num_cores)
-    predictions <- c(predictions, subpr)
+      # process only if properly fitted (no error flag)
+      if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
+
+        # recon family object (Core.R strips it to string to save memory)
+        vxlgamlss$family <- familyobj
+
+        # if multi tissue add
+        if (!is.null(segmentation)){
+          # Note: k is the index within the chunk. To get the true voxel index for segmentation:
+          true_idx <- idx_chunk[k]
+          newdata$tissue <- segmentation[, true_idx]
+          if (!is.null(segmentation_target)){
+            newdata <- newdata[newdata$tissue == segmentation_target, , drop=FALSE]
+          }}
+
+        # predict
+        pred_res <- predict(vxlgamlss,
+                            newdata = newdata,
+                            type = ptype,
+                            terms = terms,
+                            what = what,
+                            ...)
+
+        # Structure the list correctly
+        if (!is.null(what) && length(what) == 1) {
+          l <- list()
+          l[[what]] <- as.numeric(pred_res)
+        } else {
+          l <- as.list(pred_res)
+        }
+
+        l$family <- fname
+        l$vxl <- vxlgamlss$vxl
+
+        return(l)
+
+      } else {
+        return(NA)
+      }
+    }, future.seed = TRUE)
+
+    # Put the chunk results into the pre-allocated list
+    predictions[idx_chunk] <- subpr
   }
-  gc()
+
+  gc(verbose = FALSE)
   return(structure(predictions, class = "vbgamlss.predictions"))
 }
 
 
+
+
+
+
+# ------------------------------------------------------------------------------
 #' Compute Z-scores for vbgamlss predictions given Y voxel data and image mask.
 #'
 #' @param predictions Predictions from vbgamlss model.
@@ -147,59 +186,97 @@ predict.vbgamlss <- function(object, newdata=NULL, num_cores=NULL, ptype='parame
 #' @param num_cores Number of CPU cores to use for parallel processing. Defaults to all available cores.
 #' @return A structure containing Z-scores.
 #' @export
+#' Compute Z-scores (Normalized Quantile Residuals) for vbgamlss predictions
+#'
+#' @param predictions A vbgamlss.predictions object.
+#' @param yimageframe A data.frame or matrix of observed response values.
+#' @param num_cores Number of CPU cores to use for parallel processing.
+#' @return A structure containing z-scores.
+#' @import future.apply
+#' @import future
+#' @export
 zscore.vbgamlss <- function(predictions, yimageframe, num_cores=NULL){
+
   if (missing(predictions)) { stop("vbgamlss.predictions is missing")}
   if (missing(yimageframe)) { stop("yimageframe is missing")}
-  if (is.null(num_cores)) {num_cores <- availableCores()}
+  if (is.null(num_cores)) {num_cores <- future::availableCores()}
 
-  if (!is.data.frame(yimageframe)){stop("Error: yimageframe must be a data.frame")}
+  # Matrix conversion for much faster column subsetting
+  if (!is.data.frame(yimageframe) && !is.matrix(yimageframe)) {
+    stop("Error: yimageframe must be a data.frame or matrix")
+  }
+  yimageframe <- as.matrix(yimageframe)
 
   # parallel function
   do.zscore <- function(obj) {
     pred <- obj$pred
     yval <- obj$yvxldat
+
+    # Gracefully handle failed predictions (NA) from the fitting phase
+    if (length(pred) == 1 && is.na(pred[1])) {
+      return(rep(NA, length(yval)))
+    }
+
     # get number of params
     lpar <- sum(names(pred) %in% c("mu", "sigma", "nu", "tau"))
-    qfun <- paste("p",pred$family,sep="")
+    qfun <- paste("p", pred$family, sep="")
+
+    # explicit 'q' argument prevents positional mismatches
     if (lpar == 1) {
-      newcall <- call(qfun, yval, mu = pred$mu)
+      newcall <- call(qfun, q = yval, mu = pred$mu)
     } else if (lpar == 2) {
-      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma)
+      newcall <- call(qfun, q = yval, mu = pred$mu, sigma = pred$sigma)
     } else if (lpar == 3) {
-      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma, nu = pred$nu)
+      newcall <- call(qfun, q = yval, mu = pred$mu, sigma = pred$sigma, nu = pred$nu)
     } else {
-      newcall <- call(qfun, yval, mu = pred$mu, sigma = pred$sigma, nu = pred$nu, tau = pred$tau)
+      newcall <- call(qfun, q = yval, mu = pred$mu, sigma = pred$sigma, nu = pred$nu, tau = pred$tau)
     }
+
     cdf <- eval(newcall)
+
+    # Bound CDF to prevent Inf/-Inf z-scores from perfect 0 or 1 probabilities
+    cdf[cdf < 1e-12] <- 1e-12
+    cdf[cdf > (1 - 1e-12)] <- 1 - 1e-12
+
     rqres <- qnorm(cdf)
     return(rqres)
   }
 
   # compute chunk size
   Nchunks <- estimate_nchunks(yimageframe)
-  # parallel call
-  zscores = c()
-  chunked = as.list(isplitIndices(ncol(yimageframe), chunks=Nchunks))
-  i = 1
-  for (ichunk in chunked){
-    cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
-    i<- i+1
-    # chunk yimageframe and predictions
-    iterable_chunk <- mapply(list,
-                             pred = predictions[ichunk],
-                             yvxldat = yimageframe[,ichunk],
-                             SIMPLIFY=F)
-    # compute z-scores
-    subzs <- pbmclapply(iterable_chunk,
-                        do.zscore,
-                        mc.cores=num_cores)
+
+  # predict setup
+  future::plan(strategy="future::cluster", workers=num_cores)
+
+  zscores <- list()
+  chunked_indices <- as.list(itertools::isplitIndices(ncol(yimageframe), chunks=Nchunks))
+
+  for (i in seq_along(chunked_indices)){
+    ichunk <- chunked_indices[[i]]
+    cat(paste0("Chunk: ", i, "/", Nchunks, " (Computing Z-scores)\n"))
+
+    # Extract chunk data
+    y_chunk <- yimageframe[, ichunk, drop=FALSE]
+    pred_chunk <- predictions[ichunk]
+
+    # Pack iterable chunk for workers
+    iterable_chunk <- lapply(seq_along(ichunk), function(j) {
+      list(pred = pred_chunk[[j]], yvxldat = as.numeric(y_chunk[, j]))
+    })
+
+    # compute z-scores in parallel using future framework
+    subzs <- future.apply::future_lapply(iterable_chunk,
+                                         do.zscore,
+                                         future.seed = TRUE,
+                                         future.packages = c("gamlss.dist",
+                                                             "gamlss",
+                                                             "gamlss2"))
     zscores <- c(zscores, subzs)
   }
 
+  gc()
   return(structure(zscores, class = "vbgamlss.zscores"))
 }
-
-
 
 
 
@@ -244,129 +321,101 @@ zscore.vbgamlss <- function(predictions, yimageframe, num_cores=NULL){
                              # DEPRECATED #
 ############################## ========== ######################################
 
-#'
-#' #' @export
-#' save_model_old <- function(model_list, file_prefix, num_cores = NULL) {
-#'   warning("This function is deprecated. Use save_model instead.")
-#'   # check and make folder
-#'   parts <- unlist(strsplit(file_prefix, "/"))
-#'   directory <- paste(parts[-length(parts)], collapse = "/")
-#'   if (!dir.exists(directory)) {
-#'     dir.create(directory, recursive = TRUE)
-#'     cat("Folder created:", directory, "\n")
-#'   } else {
-#'     stop("Folder already exists:", directory, "\n")
-#'   }
-#'
-#'   if (is.null(num_cores)) {num_cores <- availableCores()}
-#'   # save parallel
-#'   noout <- pbmclapply(1:length(model_list),
-#'                       function(i) {
-#'                         filename <- paste0(file_prefix, ".", model_list[[i]]$vxl)
-#'                         saveRDS(model_list[[i]], file = filename)
-#'                         NULL
-#'                       },
-#'                       mc.cores=num_cores)
-#' }
-#'
-#'
-#'
-#' #' Load VBGAMLSS models from files with the specified prefix.
-#' #'
-#' #' @param file_prefix Prefix of the files containing the VBGAMLSS models.
-#' #' @param num_cores Number of CPU cores to use for parallel processing.
-#' #'   Defaults to all available cores if not provided.
-#' #' @return A structure containing the loaded VBGAMLSS models.
-#' #' @export
-#' load_model_individually <- function(file_prefix, num_cores = NULL) {
-#'   warning("This function is deprecated. Use load_model instead.")
-#'   if (is.null(num_cores)) {num_cores <- availableCores()}
-#'   # parse path:
-#'   parts <- unlist(strsplit(file_prefix, "/"))
-#'   directory <- paste(parts[-length(parts)], collapse = "/")
-#'   prefix <- gsub("\\'", "", parts[length(parts)])
-#'   # List files with the specified prefix
-#'   file_paths <- list.files(directory, pattern = paste0("^", prefix))
-#'   # Extract integer suffix from file names
-#'   integer_suffixes <- sapply(file_paths, function(s) {as.numeric(gsub("^.*\\.(\\d+)$", "\\1", s))})
-#'   # check if missing voxel models
-#'   expected_numbers <- seq(1, length(integer_suffixes))
-#'   missing_numbers <- setdiff(expected_numbers, integer_suffixes)
-#'   cat(paste0('VBGAMLSS model directory:', directory))
-#'   if (length(missing_numbers) == 0) {
-#'     cat(paste0('Found models for ', length(integer_suffixes), ' voxels.'))
-#'   } else {
-#'     cat(paste0("Some models are missing. can't find model[s] for voxel: ", missing_numbers))
-#'   }
-#'   integer_suffixes <- as.list(sort(integer_suffixes))
-#'   # run load
-#'   plan(stategy="future::cluster", workers=num_cores)
-#'   handlers(global = TRUE)
-#'   handlers("pbmcapply")
-#'   p <- progressor(along=integer_suffixes)
-#'   # parallel load
-#'   models <- foreach(i = integer_suffixes) %dofuture% {
-#'     rds <- readRDS(paste0(file_prefix, ".", i))
-#'     p()
-#'     rds
-#'   }
-#'   gc()
-#'   return(structure(models, class = "vbgamlss"))
-#' }
-#'
-#' #' @export
-#' load_model_individually_chunks <- function(file_prefix, num_cores = NULL, chunk_max_mb=256,
-#'                                     index=NULL) {
-#'   warning("This function is deprecated. Use load_model instead.")
-#'   if (is.null(num_cores)) {num_cores <- availableCores()}
-#'   # parse path:
-#'   parts <- unlist(strsplit(file_prefix, "/"))
-#'   directory <- paste(parts[-length(parts)], collapse = "/")
-#'   prefix <- gsub("\\'", "", parts[length(parts)])
-#'   # List files with the specified prefix
-#'   file_paths <- list.files(directory, pattern = paste0("^", prefix))
-#'   # Extract integer suffix from file names
-#'   integer_suffixes <- sapply(file_paths, function(s) {as.numeric(gsub("^.*\\.(\\d+)$", "\\1", s))})
-#'
-#'   # check if missing voxel models
-#'   expected_numbers <- seq(1, length(integer_suffixes))
-#'   missing_numbers <- setdiff(expected_numbers, integer_suffixes)
-#'   cat(paste0('VBGAMLSS model directory:', directory), fill=T)
-#'
-#'   if (length(missing_numbers) == 0) {
-#'     cat(paste0('Found models for ', length(integer_suffixes), ' voxels.'), fill=T)
-#'     cat(paste0('Expect long post-processing.'), fill=T)
-#'   } else {
-#'     warning(paste0("Some models are missing. Can't find model[s] for voxel: ", missing_numbers))
-#'   }
-#'   integer_suffixes <- as.list(sort(integer_suffixes))
-#'
-#'   # subset the voxel models to load by index
-#'   if (! is.null(index)){
-#'     integer_suffixes <- integer_suffixes[index]
-#'     cat('Index is set, loading only the voxels models number: ',index, '\n', fill=T)
-#'   }
-#'   # parallel call
-#'   plan(stategy="future::cluster", workers=num_cores)
-#'   Nchunks = estimate_nchunks(paste0(file_prefix, ".", 1),
-#'                              from_files=TRUE,
-#'                              chunk_max_Mb=chunk_max_mb)
-#'   chunked = as.list(isplitIndices(length(integer_suffixes), chunks=Nchunks))
-#'   models = c()
-#'   i = 1
-#'   for (ichunk in chunked){
-#'     cat(paste0("Chunk: ",i,"/", Nchunks), fill=T)
-#'     i<- i+1
-#'     integer_suffixes_chunked <- integer_suffixes[ichunk]
-#'     p <- progressor(length(integer_suffixes_chunked))
-#'     # parallel loop
-#'     loaded <- foreach(i = integer_suffixes_chunked) %dofuture% {
-#'       rds <- readRDS(paste0(file_prefix, ".", i))
-#'       p()
-#'       rds
-#'     }
-#'     models <- c(models, loaded)
-#'   }
-#'   gc()
-#'   return(structure(models, class = "vbgamlss"))
-#' }
+# predict.vbgamlss <- function(object,
+#                              newdata=NULL,
+#                              num_cores=NULL,
+#                              ptype='parameter',
+#                              segmentation=NULL,
+#                              segmentation_target=NULL,
+#                              afold=NULL,
+#                              terms = NULL,
+#                              what = NULL,
+#                              ...){
+#
+#   if (missing(object)) { stop("vbgamlss object is missing")}
+#   if (is.null(num_cores)) {num_cores <- future::availableCores()}
+#
+#   # check segmentation
+#   if (!is.null(segmentation)){
+#     if (!is.data.frame(segmentation) && !is.matrix(segmentation)) {
+#       stop("Error: segmentation must be a data.frame or matrix")
+#     }
+#   }
+#
+#   # subset the dataframe if the input is a fold from CV
+#   if (!is.null(afold)){
+#     if (!is.logical(afold) && !is.integer(afold)) {
+#       stop("Error: afold must be either logical or integer vector.")
+#     }
+#     if (!is.null(segmentation)) segmentation <- segmentation[afold, , drop=FALSE]
+#   }
+#
+#   fname <- as.character(object[[1]]$family)
+#   familyobj <- gamlss2:::complete_family(get(fname))
+#
+#   # compute chunk size
+#   Nchunks <- estimate_nchunks(object)
+#
+#   # predict setup
+#   future::plan(strategy="future::cluster", workers=num_cores)
+#
+#   # split indices to match Core.R chunking
+#   chunked_indices <- as.list(itertools::isplitIndices(length(object), chunks=Nchunks))
+#   predictions <- list()
+#
+#   # chunks loop
+#   for (i in seq_along(chunked_indices)){
+#     idx_chunk <- chunked_indices[[i]]
+#     cat(paste0("Chunk: ", i, "/", Nchunks, " (Predicting)"), fill=TRUE)
+#
+#     # parallel call using future.apply to match Core.R framework
+#     subpr <- future.apply::future_lapply(idx_chunk, function(idx) {
+#
+#       vxlgamlss <- object[[idx]]
+#
+#       # process only if properly fitted (no error flag)
+#       if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
+#
+#         # recon family object (Core.R strips it to string to save memory)
+#         vxlgamlss$family <- familyobj
+#
+#         # if multi tissue add
+#         if (!is.null(segmentation)){
+#           newdata$tissue <- segmentation[, idx]
+#           if (!is.null(segmentation_target)){
+#             newdata <- newdata[newdata$tissue == segmentation_target, , drop=FALSE]
+#           }}
+#
+#         # predict
+#         pred_res <- predict(vxlgamlss,
+#                             newdata = newdata,
+#                             type = ptype,
+#                             terms = terms,
+#                             what = what,
+#                             ...)
+#
+#         # Structure the list correctly
+#         if (!is.null(what) && length(what) == 1) {
+#           l <- list()
+#           l[[what]] <- as.numeric(pred_res)
+#         } else {
+#           l <- as.list(pred_res)
+#         }
+#
+#         l$family <- fname
+#         l$vxl <- vxlgamlss$vxl
+#
+#         return(l)
+#
+#       } else {
+#         return(NA)
+#       }
+#     }, future.seed = TRUE)
+#
+#     predictions <- c(predictions, subpr)
+#   }
+#
+#   gc()
+#   return(structure(predictions, class = "vbgamlss.predictions"))
+# }
+#

@@ -20,11 +20,10 @@ vbgamlss.model_selection <- function(# model selection commands
                                      tau_formulas,
                                      fold.var,
                                      images,  # pass one path or more as vector
-                                     mask,
                                      train.data,
                                      families =  c('NO'),
                                      segmentation = NULL,
-                                     chunk_max_mb = 128,
+                                     chunk_max_mb = 256,
                                      n_folds = 5,
                                      k.penalty=NULL,
                                      verbose=F,
@@ -109,19 +108,19 @@ vbgamlss.model_selection <- function(# model selection commands
     set.seed(04281945)
     out <- vbgamlss.cv(g.formula = g.formula,
                       image = image,
-                      mask = mask,
                       train.data = read.csv(train.data),
                       fold.var = fold.var,
                       g.family = g.family,
                       segmentation = segmentation,
                       chunk_max_mb = chunk_max_mb,
-                      n_folds = n_folds,
                       k.penalty = k.penalty,
                       verbose = verbose,
                       return_all_GD = return_all_GD,
                       num_cores = NULL,
-                      debug=T, save_states=T, resume=T,
-                      logdir = slurm$wd)
+                      debug=T,
+                      save_states=T,
+                      resume=T,
+                      cachedir = slurm$wd)
     saveRDS(out, slurm$rdsout)
     ")
 
@@ -178,6 +177,10 @@ vbgamlss.model_selection <- function(# model selection commands
 
 
 
+
+
+
+# -----------------------------------------------------------
 slurm_template <- function(){
 return(
 '#!/bin/bash
@@ -202,6 +205,10 @@ singularity exec $containeR Rscript <%= SCRIPT %>
 
 
 
+
+
+
+# -----------------------------------------------------------
 slurm_resources <- function(n='VBGAMLSS', o=NULL, e=NULL,
                             t='71:59:00', m='40G', c='12', a=1, r=NULL) {
   slurm <- list()
@@ -218,6 +225,10 @@ slurm_resources <- function(n='VBGAMLSS', o=NULL, e=NULL,
 
 
 
+
+
+
+# -----------------------------------------------------------
 slurm_registry <- function(Njobs, env){
   registry <- list()
   registry$wd <- getwd()
@@ -243,6 +254,13 @@ slurm_registry <- function(Njobs, env){
 
 
 
+
+
+
+
+
+
+# -----------------------------------------------------------
 sanity_check <- function(file_list){
   ## safety check ##
   for (file_path in file_list) {
@@ -256,6 +274,11 @@ sanity_check <- function(file_list){
 
 
 
+
+
+
+
+# -----------------------------------------------------------
 sbatch_jobs <- function(registry) {
   # example: 'Submitted batch job 22119441'
   jobs_id <- c()
@@ -282,6 +305,11 @@ sbatch_jobs <- function(registry) {
 }
 
 
+
+
+
+
+# -----------------------------------------------------------
 # To be changed, SLURM has output in machine readable format
 jobs_status <- function(registry, param='status') {
   # sacct -j 22119441 --format="JobID,State,Elapsed,ExitCode,End"
@@ -309,6 +337,10 @@ jobs_status <- function(registry, param='status') {
 
 
 
+
+
+
+# -----------------------------------------------------------
 monitor_jobs <- function(registry, sleep=10, resbatch=NULL) {
   RUNNING = TRUE
   start_time = Sys.time()
@@ -378,6 +410,8 @@ monitor_jobs <- function(registry, sleep=10, resbatch=NULL) {
 
 
 
+
+# -----------------------------------------------------------
 gather_jobs_outputs <- function(registry){
   final <- setNames(lapply(seq_along(registry$formulas),
                            function(i) readRDS(registry$jobs_results[[i]])),
