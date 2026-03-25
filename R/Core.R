@@ -413,6 +413,7 @@ vbgamlss <- function(imageframe,
   if (RhpcBLASctl::omp_get_num_procs() != master_omp)
         {RhpcBLASctl::omp_set_num_threads(master_omp)}
 
+
   # Report of success
   isconverged <- future.apply::future_vapply(registry$full_paths,
                                              function(x) {
@@ -429,10 +430,6 @@ vbgamlss <- function(imageframe,
       sum(isconverged == 404),'went missing. \n')
 
 
-
-  # -------------------------------------------
-
-
   # Aggregating
   cat("Aggregating individual voxel models\n")
   agg.start.time <- Sys.time()
@@ -442,13 +439,8 @@ vbgamlss <- function(imageframe,
     # read as raw bytes
     f_size <- file.info(registry$full_paths[i])$size
     models[[i]] <- readBin(registry$full_paths[i], what = "raw", n = f_size)
-
-    if (i %% 1e4 == 0 || i == nvox) {
-      elapsed_min <- format(difftime(current.time, start.time, units = "mins"), digits = 3)
-      cat(sprintf("%.1f%% [elapsed: %.2f min]\n", (i/nvox)*100, elapsed_min))
-      # Release memory or OOM
-      gc(verbose = FALSE)
-    }
+    # Release memory or OOM
+    if (i %% 1e4 == 0 || i == nvox) {gc(verbose = FALSE)}
   }
   models <- structure(models, class = "vbgamlss")
 
@@ -479,7 +471,7 @@ vbgamlss <- function(imageframe,
 
 
 
-# Define the S3 subsetting method for our custom class
+# Define the S3 subsetting method, here it would cool to include restore_family..
 `[[.vbgamlss` <- function(x, i, ...) {
   raw_bytes <- unclass(x)[[i, ...]]
   if (is.null(raw_bytes)) return(NULL)

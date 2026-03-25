@@ -231,7 +231,7 @@ predictGD <- function (object,
 
       # Predict per parameter feeding terms without RE.
       for (param in parnames){
-        quite(cat(param, fill=T), skip=verbose)
+        quite(cat('\t\t| ', param, fill=T), skip=verbose)
         cat("\033[34m")
         pfit <- quite(
           predict.vbgamlss(object,
@@ -281,7 +281,7 @@ predictGD <- function (object,
     cat(paste0("\t| Found existing fold predicted response, loading them"), fill=T)
     resp <- qs2::qs_read(fold.R.file)
   } else {
-    quite(cat('\t| - Predicting fold response', fill=T), skip=verbose)
+    quite(cat('\t| Predicting fold response', fill=T), skip=verbose)
 
     RE_to_drop=NULL
     if (drop_re){
