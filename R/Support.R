@@ -82,12 +82,12 @@ predict.vbgamlss <- function(object,
   }
 
   # subset the dataframe if the input is a fold from CV
-  if (!is.null(afold)){
-    if (!is.logical(afold) && !is.integer(afold)) {
-      stop("Error: afold must be either logical or integer vector.")
-    }
-    if (!is.null(segmentation)) segmentation <- segmentation[afold, , drop=FALSE]
-  }
+  #if (!is.null(afold)){
+  #  if (!is.logical(afold) && !is.integer(afold)) {
+  #    stop("Error: afold must be either logical or integer vector.")
+  #  }
+  #  if (!is.null(segmentation)) segmentation <- segmentation[afold, , drop=FALSE]
+  #}
 
   # This works perfectly because the master session knows the S3 method
   fname <- as.character(object[[1]]$family)

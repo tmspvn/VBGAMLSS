@@ -106,7 +106,7 @@ vbgamlss.cv <- function(imageframe,
       cat('\t| Training: fitting train fold', fill=T)
       cat("\033[34m")
       model <- quite(
-        vbgamlss(imageframe=imageframe,
+        vbgamlss(imageframe=imageframe[training_fold,],
                  g.formula=g.formula, # parsing handled in Core.R
                  train.data=train_fold_data,
                  g.family=g.family,
@@ -136,15 +136,16 @@ vbgamlss.cv <- function(imageframe,
     } else {
       cat('\t| Test: predict test metrics', fill=T)
       GDs <- predictGD(model,
-                       newdata = test_fold_data,
-                       verbose=verbose,
-                       segmentation=segmentation,
-                       segmentation_target=segmentation_target,
-                       afold=test_indices,
-                       resume=resume,
-                       save_states=save_states,
-                       drop_re = drop_re,
-                       loginfo=c(fold, state.dir))
+                       test_imageframe     = imageframe[test_indices,],
+                       newdata             = test_fold_data,
+                       verbose             = verbose,
+                       segmentation        = segmentation,
+                       segmentation_target = segmentation_target,
+                       #afold               = test_indices,
+                       resume              = resume,
+                       save_states         = save_states,
+                       drop_re             = drop_re,
+                       loginfo             = c(fold, state.dir))
 
       if (save_states){qs2::qs_save(GDs, fold.gd.file)}
 
@@ -199,11 +200,12 @@ vbgamlss.cv <- function(imageframe,
 # --------------------------------
 # Predict new fold Global Deviance
 predictGD <- function (object,
+                       test_imageframe,
                        newdata = NULL,
                        verbose=F,
                        segmentation=NULL,
                        segmentation_target=NULL,
-                       afold=NULL,
+                       #afold=NULL,
                        loginfo=c(fold, state.dir),
                        resume=T,
                        save_states=T,
@@ -244,13 +246,13 @@ predictGD <- function (object,
         cat("\033[34m")
         pfit <- quite(
           predict.vbgamlss(object,
-                           newdata = newdata,
-                           ptype = 'parameter',
-                           segmentation = segmentation,
+                           newdata             = newdata,
+                           ptype               = 'parameter',
+                           segmentation        = segmentation,
                            segmentation_target = segmentation_target,
-                           afold = afold,
-                           what = param,
-                           terms = terms_exre
+                           #afold               = afold,
+                           what                = param,
+                           terms               = terms_exre
           ),
           skip=verbose)
         cat("\033[0m")
@@ -269,11 +271,11 @@ predictGD <- function (object,
       cat("\033[34m")
       nfitted <- quite(
         predict.vbgamlss(object,
-                         newdata = newdata,
-                         ptype='parameter',
-                         segmentation=segmentation,
-                         segmentation_target=segmentation_target,
-                         afold=afold
+                         newdata             = newdata,
+                         ptype               = 'parameter',
+                         segmentation        = segmentation,
+                         segmentation_target = segmentation_target,
+                         #afold               = afold
         ),
         skip=verbose)
       cat("\033[0m")
@@ -299,12 +301,12 @@ predictGD <- function (object,
     cat("\033[34m")
     resp <- quite(
       predict.vbgamlss(object,
-                       newdata = newdata,
-                       ptype='response',
-                       segmentation=segmentation,
-                       segmentation_target=segmentation_target,
-                       afold=afold,
-                       terms = terms_exre
+                       newdata             = newdata,
+                       ptype               = 'response',
+                       segmentation        = segmentation,
+                       segmentation_target = segmentation_target,
+                       #afold               = afold,
+                       terms               = terms_exre
       ),
       skip=verbose)
     cat("\033[0m")
@@ -319,7 +321,8 @@ predictGD <- function (object,
     condA = ! "try-error" %in% class(nfitted[[i]])
     condB = ! all(is.na(nfitted[[i]]))
     if (condA & condB) {
-      nfitted[[i]][['y']] <- as.numeric(unlist(resp[[i]])[1:nsub])
+      nfitted[[i]][['y']] <- test_imageframe[,i] # subj x vox mat
+      nfitted[[i]][['yhat']] <- as.numeric(unlist(resp[[i]])[1:nsub])
     } else {
       nfitted[[i]] <- NA
     }
@@ -375,6 +378,7 @@ testGD <- function(nfit, familyobj){
   }
 
   # Compute TGD on cleaned data (code from GAMLSS)
+  # https://github.com/gamlss-dev/gamlss/blob/6a1e3c34ebf55825fb4774c60206c777442da21c/R/gamlssVGD_23_12_21.R#L235
   if (is.null(nfit$y))
     stop("the response variables is missing in the newdata")
 
@@ -428,8 +432,8 @@ testGD <- function(nfit, familyobj){
   Vresid <- qNO(eval(ures))
   dev <- -2 * sum(eval(devi))
 
-  # Mean Absolute Error (MAE)
-  vxl_mae <- mean(abs(y1 - nfit$mu), na.rm = TRUE)
+  # Mean Absolute Error (MAE) using the true predicted mean
+  vxl_mae <- mean(abs(y1 - nfit$yhat), na.rm = TRUE)
 
   # Extract observation-wise log-loss (negative log-likelihood) and CDF
   ll_obs_raw <- -eval(devi)
@@ -448,12 +452,12 @@ testGD <- function(nfit, familyobj){
   Vresid_na[! yisnan] <- Vresid
 
   # output
-  out <- list(TGD = dev,
+  out <- list(TGD          = dev,
               predictError = dev/length(nfit$mu),
-              resid = Vresid_na,
-              MAE = vxl_mae,
-              LL = vxl_ll,
-              CLL = vxl_cll)
+              resid        = Vresid_na,
+              MAE          = vxl_mae,
+              LL           = vxl_ll,
+              CLL          = vxl_cll)
   return(out)
 }
 
@@ -469,7 +473,7 @@ statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
   TGDs <- numeric(nvxl) * NA
   predictErrors <- numeric(nvxl) * NA
   MAEs <- numeric(nvxl) * NA
-  LLs <- numeric(nvxl) * NA
+  LLs <- numeric(nvxl)  * NA
   CLLs <- numeric(nvxl) * NA
 
   resids <- matrix(data=NA, nrow=nsub, ncol=nvxl)
@@ -477,21 +481,21 @@ statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
 
   for (i in seq_len(nvxl)) {
     if (! is.na(GDs)[i]) {
-      TGDs[i] <- GDs[[i]]$TGD
+      TGDs[i]          <- GDs[[i]]$TGD
       predictErrors[i] <- GDs[[i]]$predictError
-      MAEs[i] <- GDs[[i]]$MAE
-      LLs[i] <- GDs[[i]]$LL
-      CLLs[i] <- GDs[[i]]$CLL
-      resids[, i] <- GDs[[i]]$resid
-      resids_4math <- c(resids_4math, GDs[[i]]$resid)
+      MAEs[i]          <- GDs[[i]]$MAE
+      LLs[i]           <- GDs[[i]]$LL
+      CLLs[i]          <- GDs[[i]]$CLL
+      resids[, i]      <- GDs[[i]]$resid
+      resids_4math     <- c(resids_4math, GDs[[i]]$resid)
     } else {
-      TGDs[i] <- NA
+      TGDs[i]          <- NA
       predictErrors[i] <- NA
-      MAEs[i] <- NA
-      LLs[i] <- NA
-      CLLs[i] <- NA
-      resids[, i] <- NA
-      resids_4math <- NA
+      MAEs[i]          <- NA
+      LLs[i]           <- NA
+      CLLs[i]          <- NA
+      resids[, i]      <- NA
+      resids_4math     <- NA
     }
   }
 
@@ -686,7 +690,7 @@ getCVMAE <- function(cvresults, term='mean') {
 
 
 # --------------------------------
-# Lazy get cross-validated Uncensored Log-Loss (LL) from cvresults
+# Lazy get cross-validated Uncensored Log-Loss (LL) or Negative Log-Predictive Density (NLPD) from cvresults
 getCVLL <- function(cvresults, term='mean') {
   CVLL = 0
   for (fold in cvresults) {
@@ -716,7 +720,7 @@ getCVCLL <- function(cvresults, term='mean') {
 # --------------------------------
 # Lazy get ALL cross-validated metrics at once
 getCV_All_Metrics <- function(cvresults) {
-  out <- list()
+  out <- list(GD = list(), MAE = list(), LL = list(), CLL = list())
   for (t in c('mean', 'sd', 'quantile.0%', 'quantile.25%', 'quantile.50%',
               'quantile.75%', 'quantile.100%', 'min', 'max')) {
     out$GD[[t]] <- getCVGD(cvresults, term=t)

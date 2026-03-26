@@ -81,6 +81,10 @@ vbgamlss <- function(imageframe,
   # check_formula_LHS(g.formula)
   if (missing(train.data)) { stop("subjData is missing")}
 
+  if (nrow(imageframe) != nrow(train.data)) {
+    stop("Error: imageframe and train.data have different row counts. Subjects must be strictly aligned.")
+  }
+
   # Force character columns to factors
   train.data <- as.data.frame(train.data, stringsAsFactors=TRUE)
 
