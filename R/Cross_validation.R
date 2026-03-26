@@ -95,7 +95,7 @@ vbgamlss.cv <- function(imageframe,
     # test
     test_indices <- which(train.data$folds == fold)
     test_fold_data <- train.data[test_indices, ]
-    test_fold_data <- droplevels(test_fold_data)
+    #test_fold_data <- droplevels(test_fold_data)
 
     # Fit or resume the model on the training fold
     fold.model.file = file.path(state.dir, paste0('.fold.', fold, '.model.qs'))
@@ -373,7 +373,7 @@ testGD <- function(nfit, familyobj){
 
   # subset NA
   yisnan <- is.nan(nfit$y)
-  for (mtd in c('y', 'mu', 'sigma', 'nu', 'tau')[1:(lpar+1)]) {
+  for (mtd in c('y', 'yhat', 'mu', 'sigma', 'nu', 'tau')[1:(lpar+1)]) {
     eval(parse(text=paste0('nfit$',mtd,' <- nfit$',mtd,'[! yisnan]')))
   }
 
@@ -501,7 +501,7 @@ statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
 
   # penalize TGDs
   if (! is.null(k.penalty)){
-    TGDs_pen <- (k.penalty * deg.fre) - TGDs
+    TGDs_pen <- (k.penalty * deg.fre) + TGDs
   }
 
   # statistics
