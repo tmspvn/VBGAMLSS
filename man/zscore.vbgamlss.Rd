@@ -7,14 +7,16 @@
 zscore.vbgamlss(predictions, yimageframe, num_cores = NULL)
 }
 \arguments{
-\item{predictions}{Predictions from vbgamlss model.}
+\item{predictions}{A vbgamlss.predictions object.}
 
-\item{yimageframe}{data.frame object of the response variables to compute z-score of.}
+\item{yimageframe}{A data.frame or matrix of observed response values.}
 
-\item{num_cores}{Number of CPU cores to use for parallel processing. Defaults to all available cores.}
+\item{num_cores}{Number of CPU cores to use for parallel processing.}
 }
 \value{
 A structure containing Z-scores.
+
+A structure containing z-scores.
 }
 \description{
 Compute Z-scores for vbgamlss predictions given Y voxel data and image mask.

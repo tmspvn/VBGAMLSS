@@ -12,7 +12,8 @@
   segmentation = NULL,
   segmentation_target = NULL,
   afold = NULL,
-  subsample = NULL,
+  terms = NULL,
+  what = NULL,
   ...
 )
 }
@@ -31,8 +32,6 @@ Defaults to one less than the total available cores if not provided.}
 \item{segmentation_target}{Optional. Integer to evaluate (eg 1).}
 
 \item{afold}{Optional. Integer, fold index when predicting CV folds (for internal use).}
-
-\item{subsample}{Optional integer vector of subject indices to predict.}
 
 \item{...}{Additional arguments passed to the predict.gamlss2 function.}
 }

@@ -475,7 +475,8 @@ vbgamlss <- function(imageframe,
 
 
 
-# Define the S3 subsetting method, here it would cool to include restore_family..
+#' Define the S3 subsetting method, here it would cool to include restore_family..
+#' @exportS3Method
 `[[.vbgamlss` <- function(x, i, ...) {
   raw_bytes <- unclass(x)[[i, ...]]
   if (is.null(raw_bytes)) return(NULL)
