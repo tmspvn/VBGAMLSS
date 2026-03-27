@@ -14,8 +14,6 @@ zscore.vbgamlss(predictions, yimageframe, num_cores = NULL)
 \item{num_cores}{Number of CPU cores to use for parallel processing.}
 }
 \value{
-A structure containing Z-scores.
-
 A structure containing z-scores.
 }
 \description{

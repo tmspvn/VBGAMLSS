@@ -180,14 +180,6 @@ predict.vbgamlss <- function(object,
 
 # ------------------------------------------------------------------------------
 #' Compute Z-scores for vbgamlss predictions given Y voxel data and image mask.
-#'
-#' @param predictions Predictions from vbgamlss model.
-#' @param yimageframe data.frame object of the response variables to compute z-score of.
-#' @param num_cores Number of CPU cores to use for parallel processing. Defaults to all available cores.
-#' @return A structure containing Z-scores.
-#' @export
-#' Compute Z-scores (Normalized Quantile Residuals) for vbgamlss predictions
-#'
 #' @param predictions A vbgamlss.predictions object.
 #' @param yimageframe A data.frame or matrix of observed response values.
 #' @param num_cores Number of CPU cores to use for parallel processing.
