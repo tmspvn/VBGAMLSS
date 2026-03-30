@@ -384,7 +384,7 @@ testGD <- function(nfit, familyobj){
   if (is.null(nfit$y))
     stop("the response variables is missing in the newdata")
 
-  if (familyobj$family %in% .gamlss.bi.list) {
+  if (familyobj$family %in% gamlss:::gamlss:::.gamlss.bi.list) {
     if (NCOL(nfit$y) == 1) {
       y1 <- nfit$y
       bd <- nfit$bd
@@ -398,7 +398,7 @@ testGD <- function(nfit, familyobj){
   }
 
   if (lpar == 1) {
-    if (familyobj$family %in% .gamlss.bi.list) {
+    if (familyobj$family %in% gamlss:::.gamlss.bi.list) {
       devi <- call(dfun, x = y1, mu = nfit$mu, bd = bd, log = TRUE)
       ures <- call(pfun, q = y1, mu = nfit$mu, bd = bd)
     } else {
@@ -406,7 +406,7 @@ testGD <- function(nfit, familyobj){
       ures <- call(pfun, q = y1, mu = nfit$mu)
     }
   } else if (lpar == 2) {
-    if (familyobj$family %in% .gamlss.bi.list) {
+    if (familyobj$family %in% gamlss:::.gamlss.bi.list) {
       devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma, bd = bd, log = TRUE)
       ures <- call(pfun, q = y1, mu = nfit$nmu, sigma = nfit$sigma, bd = bd)
     } else {
@@ -414,7 +414,7 @@ testGD <- function(nfit, familyobj){
       ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma)
     }
   } else if (lpar == 3) {
-    if (familyobj$family %in% .gamlss.bi.list) {
+    if (familyobj$family %in% gamlss:::.gamlss.bi.list) {
       devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu, bd = bd, log = TRUE)
       ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu, bd = bd)
     } else {
@@ -422,7 +422,7 @@ testGD <- function(nfit, familyobj){
       ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu)
     }
   } else {
-    if (familyobj$family %in% .gamlss.bi.list) {
+    if (familyobj$family %in% gamlss:::.gamlss.bi.list) {
       devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu, tau = nfit$tau, bd = bd, log = TRUE)
       ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma, nu = nfit$nu, tau = nfit$tau, bd = bd)
     } else {

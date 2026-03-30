@@ -152,7 +152,10 @@ vbgamlss.model_selection <- function(# model selection commands
       CALL <- glue("
                     load('{registry['genv']}')
                     load('{slurm$jenv}')
-                    invisible(lapply(registry$pkgs, require, character.only = TRUE, quietly = TRUE))
+                    suppressWarnings(
+                      suppressPackageStartupMessages(
+                        invisible(
+                          lapply(registry$pkgs, require, character.only = TRUE, quietly = TRUE))))
                     set.seed(04281945)
                     imageframe <- images2matrix(image, g.mask)
                     dtfr <- read.csv(train.data, stringsAsFactors = T)

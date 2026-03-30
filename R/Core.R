@@ -484,30 +484,13 @@ vbgamlss <- function(imageframe,
 `[[.vbgamlss` <- function(x, i, ...) {
   raw_bytes <- unclass(x)[[i, ...]]
   if (is.null(raw_bytes)) return(NULL)
-  qs2::qs_deserialize(raw_bytes)
+  restore_family(qs2::qs_deserialize(raw_bytes))
 }
+
 
 
 # Deep environment stripping
 deep_env_stripping <- function(model) {
-  #   OLD CODE, GAMLSS2 SAVES TOO MANY
-  # rm redundant backup
-  #attr(model$xterms, "terms") <- NULL
-  # rm top-level environment tethers
-  #attr(model$terms, ".Environment") <- globalenv()
-  #attr(model$formula, ".Environment") <- globalenv()
-  #attr(model$xterms, ".Environment") <- globalenv()
-  # rm environments inside individual parameter terms (mu, sigma, etc.)
-  #for (param in names(model$terms)) {
-  #  environment(model$terms[[param]]) <- globalenv()
-  #  attr(model$terms[[param]], ".Environment") <- globalenv()
-  #}
-  # do the exact same for the formulas to prevent mirroring
-  #for (param in names(model$formula)) {
-  #  environment(model$formula[[param]]) <- globalenv()
-  #  attr(model$formula[[param]], ".Environment") <- globalenv()
-  #}
-
   target_env <- environment(model$terms$mu)
   # explode passed enviroment, too many links to it to find them all manually
   if (!is.null(target_env) && !identical(target_env, globalenv()) && !identical(target_env, baseenv())) {
@@ -529,6 +512,23 @@ deep_env_stripping <- function(model) {
 # ========== #
 
 
+#   OLD CODE, GAMLSS2 SAVES TOO MANY
+# rm redundant backup
+#attr(model$xterms, "terms") <- NULL
+# rm top-level environment tethers
+#attr(model$terms, ".Environment") <- globalenv()
+#attr(model$formula, ".Environment") <- globalenv()
+#attr(model$xterms, ".Environment") <- globalenv()
+# rm environments inside individual parameter terms (mu, sigma, etc.)
+#for (param in names(model$terms)) {
+#  environment(model$terms[[param]]) <- globalenv()
+#  attr(model$terms[[param]], ".Environment") <- globalenv()
+#}
+# do the exact same for the formulas to prevent mirroring
+#for (param in names(model$formula)) {
+#  environment(model$formula[[param]]) <- globalenv()
+#  attr(model$formula[[param]], ".Environment") <- globalenv()
+#}
 
 
 
