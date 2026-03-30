@@ -336,7 +336,7 @@ predictGD <- function (object,
   not_missfits <- ! is.na(nfitted)
 
   # test GD
-  quite(cat('\t| Predicting test fold GD ', fill=T), skip=verbose)
+  quite(cat('\t| Evaluating test fold GD ', fill=T), skip=verbose)
   plan(strategy="future::cluster", workers=availableCores())
   GDs <- foreach(i=seq_along(nfitted)) %dofuture% {
     if (not_missfits[i]) {

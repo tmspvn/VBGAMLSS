@@ -244,7 +244,7 @@ quite <- function(x, skip=F) {
 }
 
 
-rand_names <- function(num_names, l=10){
+rand_names <- function(num_names, l=5){
   return(replicate(num_names, paste0(sample(c(letters, LETTERS), l, replace = TRUE), collapse = "")))
 }
 
