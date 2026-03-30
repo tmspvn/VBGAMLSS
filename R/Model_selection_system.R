@@ -237,25 +237,23 @@ vbgamlss.model_selection <- function(# model selection commands
 
 # -----------------------------------------------------------
 slurm_template <- function(){
-  return('
-  #!/bin/bash
-  #SBATCH --job-name=<%= slurm$jobname %>
-  #SBATCH --output=<%= slurm$output %>
-  #SBATCH --error=<%= slurm$error %>
-  #SBATCH --time=<%= slurm$time %>
-  #SBATCH --mem-per-cpu=<%= slurm$mempercpu %>
-  #SBATCH --cpus-per-task=<%= slurm$ncpu %>
-  #SBATCH --nodes=1
+  return('#!/bin/bash
+#SBATCH --job-name=<%= slurm$jobname %>
+#SBATCH --output=<%= slurm$output %>
+#SBATCH --error=<%= slurm$error %>
+#SBATCH --time=<%= slurm$time %>
+#SBATCH --mem-per-cpu=<%= slurm$mempercpu %>
+#SBATCH --cpus-per-task=<%= slurm$ncpu %>
+#SBATCH --nodes=1
 
-  # Enviroment variables
-  module load singularityce/4.1.0
-  export SINGULARITY_BINDPATH="/users,/tmp,/reference,/dcsrsoft,/work,/scratch,/data,/dev/shm,/var/tmp"
-  containeR=/data/PRTNR/CHUV/RADMED/ijelescu/micmap/tom/norming/containers/NormMod_R_v1.3.sif
-  ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=<%= slurm$ncpu %>
+# Enviroment variables
+module load singularityce/4.1.0
+export SINGULARITY_BINDPATH="/users,/tmp,/reference,/dcsrsoft,/work,/scratch,/data,/dev/shm,/var/tmp"
+containeR=/data/PRTNR/CHUV/RADMED/ijelescu/micmap/tom/norming/containers/NormMod_R_v1.3.sif
+ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=<%= slurm$ncpu %>
 
-  # call
-  singularity exec $containeR Rscript <%= SCRIPT %>
-
+# call
+singularity exec $containeR Rscript <%= SCRIPT %>
   ')}
 
 
