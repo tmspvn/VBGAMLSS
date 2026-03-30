@@ -384,7 +384,7 @@ testGD <- function(nfit, familyobj){
   if (is.null(nfit$y))
     stop("the response variables is missing in the newdata")
 
-  if (familyobj$family %in% gamlss:::gamlss:::.gamlss.bi.list) {
+  if (familyobj$family %in% gamlss:::.gamlss.bi.list) {
     if (NCOL(nfit$y) == 1) {
       y1 <- nfit$y
       bd <- nfit$bd
