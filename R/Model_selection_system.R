@@ -199,6 +199,7 @@ vbgamlss.model_selection <- function(# model selection commands
 
   #resbatch (max 4 times) if timeout or other
   RESBATCH = 0
+  user_interrupted <- FALSE
   while (TRUE){
     ## Sbatch jobs to the HPC ##
     cat(paste0('Sbatching ', nfm, ' jobs\n'))
@@ -209,12 +210,12 @@ vbgamlss.model_selection <- function(# model selection commands
     tryCatch({
       registry <- monitor_jobs(registry, sleep=5, resbatch=RESBATCH)
     },
-    interrupt = function(e) {
-      cat("Script interrupted by the user!\n")
-      cat("Killing the sbatched jobs...\n")
+    interrupt = function(e) {user_interrupted <<- TRUE})
+
+    if (user_interrupted) {
       system(registry$killall)
-      break
-    })
+      stop("Script interrupted by the user!\nKilling all the sbatched jobs...\n")
+      }
 
     # Check if all jobs are terminated
     if (all(registry$status %in% c("FAILED", "COMPLETED"))) {break}
