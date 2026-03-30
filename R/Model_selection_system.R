@@ -9,27 +9,28 @@
 
 #' @export
 vbgamlss.model_selection <- function(# model selection commands
-  result_file,  # where to save
-  run_name = "cv_run",
-  resume_registry=NULL,  # pass registry file, works as toggle for resume
-  reset_enviroment=T,   # reset passed global environment instead of resuming
-  sbatch_resources=list(t='71:59:00', m='40G', c='12'),
-  # gamlss cv commands
-  mu_formulas,
-  sigma_formulas,
-  nu_formulas,
-  tau_formulas,
-  fold.var,
-  images,  # pass named list of paths
-  constraints, # pass named list of numeric vectors
-  train.data,
-  families = c('NO'),
-  segmentation = NULL,
-  chunk_max_mb = 256,
-  k.penalty=NULL,
-  verbose=F,
-  return_all_GD=T,
-  ...){
+                                      result_file,  # where to save
+                                      run_name = "cv_run",
+                                      resume_registry=NULL,  # pass registry file, works as toggle for resume
+                                      reset_enviroment=T,   # reset passed global environment instead of resuming
+                                      sbatch_resources=list(t='71:59:00', m='40G', c='12'),
+                                      # gamlss cv commands
+                                      mu_formulas,
+                                      sigma_formulas,
+                                      nu_formulas,
+                                      tau_formulas,
+                                      fold.var,
+                                      images,  # pass named list of paths
+                                      constraints, # pass named list of numeric vectors
+                                      mask,
+                                      train.data,
+                                      families = c('NO'),
+                                      segmentation = NULL,
+                                      chunk_max_mb = 256,
+                                      k.penalty=NULL,
+                                      verbose=F,
+                                      return_all_GD=T,
+                                      ...){
 
   if (!is.character(train.data)) { stop("train.data class must be a path") }
 
@@ -88,6 +89,7 @@ vbgamlss.model_selection <- function(# model selection commands
     registry$formula    <- job_grid$formula
     registry$family     <- job_grid$family
     registry$constraint <- job_grid$constraint
+    registry$mask       <- mask
 
     registry$pkgs <- loadedNamespaces()
 
@@ -138,6 +140,7 @@ vbgamlss.model_selection <- function(# model selection commands
       image         <- registry$image[i]
       g.formula     <- registry$formula[i]
       g.family      <- registry$family[i]
+      g.mask        <- registry$mask
 
       # Use [[i]] to extract the actual numeric vector from the list element
       g.constraints <- registry$constraint[[i]]
@@ -151,23 +154,25 @@ vbgamlss.model_selection <- function(# model selection commands
                     load('{slurm$jenv}')
                     quite(lapply(registry$pkgs, require, character.only = TRUE))
                     set.seed(04281945)
+                    imageframe <- images2matrix(image, g.mask)
                     dtfr <- read.csv(train.data, stringsAsFactors = T)
-                    out <- vbgamlss.cv(g.formula   = g.formula,
-                                          image        = image,
-                                          train.data   = dtfr,
-                                          fold.var     = fold.var,
-                                          g.family     = g.family,
-                                          segmentation = segmentation,
-                                          chunk_max_mb = chunk_max_mb,
-                                          force_constraints = g.constraints,
-                                          k.penalty    = k.penalty,
-                                          verbose      = verbose,
-                                          return_all_GD = return_all_GD,
-                                          num_cores    = NULL,
-                                          debug        = T,
-                                          save_states  = T,
-                                          resume       = T,
-                                          cachedir     = slurm$wd)
+                    out <- vbgamlss.cv( g.formula    = g.formula,
+                                        imageframe   = imageframe,
+                                        train.data   = dtfr,
+                                        fold.var     = fold.var,
+                                        g.family     = g.family,
+                                        segmentation = segmentation,
+                                        chunk_max_mb = chunk_max_mb,
+                                        force_constraints = g.constraints,
+                                        k.penalty    = k.penalty,
+                                        verbose      = verbose,
+                                        return_all_GD = return_all_GD,
+                                        num_cores    = NULL,
+                                        debug        = T,
+                                        save_states  = T,
+                                        resume       = T,
+                                        drop_re      = T,
+                                        logdir     = slurm$wd)
                     qs2::qs_save(out, slurm$rdsout)
                     ")
 
