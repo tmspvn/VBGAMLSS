@@ -22,6 +22,7 @@ vbgamlss(
   maxit = c(100, 33),
   future_plan_strategy = "future.mirai::mirai_cluster",
   save_model = NULL,
+  deep_stripping = TRUE,
   ...
 )
 }
