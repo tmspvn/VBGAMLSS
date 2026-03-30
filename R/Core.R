@@ -370,11 +370,7 @@ vbgamlss <- function(imageframe,
                                       g$family       <- g$family$family
                                       g$vxl          <- vxlcol
                                       if (deep_stripping){
-                                        attr(g$terms,
-                                             ".Environment") <- globalenv()
-                                        attr(g$formula,
-                                             ".Environment") <- globalenv()
-                                      }
+                                        g <- deep_env_stripping(g)}
                                     }
 
                                     # Save on disk to unload master
@@ -490,6 +486,30 @@ vbgamlss <- function(imageframe,
   if (is.null(raw_bytes)) return(NULL)
   qs2::qs_deserialize(raw_bytes)
 }
+
+
+# Deep environment stripping
+deep_env_stripping <- function(model) {
+  # rm redundant backup
+  attr(model$xterms, "terms") <- NULL
+  # rm top-level environment tethers
+  attr(model$terms, ".Environment") <- globalenv()
+  attr(model$formula, ".Environment") <- globalenv()
+  attr(model$xterms, ".Environment") <- globalenv()
+  # rm environments inside individual parameter terms (mu, sigma, etc.)
+  for (param in names(model$terms)) {
+    environment(model$terms[[param]]) <- globalenv()
+    attr(model$terms[[param]], ".Environment") <- globalenv()
+  }
+  # do the exact same for the formulas to prevent mirroring
+  for (param in names(model$formula)) {
+    environment(model$formula[[param]]) <- globalenv()
+    attr(model$formula[[param]], ".Environment") <- globalenv()
+  }
+  return(model)
+}
+
+
 
 # ================== #
 #  TESTING VERSIONS  #
