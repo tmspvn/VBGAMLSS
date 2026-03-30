@@ -607,8 +607,6 @@ get_fixed_terms <- function(m) {
 
 
 
-
-
 # --------------------------------
 # Create leave-one-site/dataset-out cross-validation folds
 #' @export

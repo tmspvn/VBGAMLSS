@@ -70,6 +70,7 @@ vbgamlss <- function(imageframe,
                      maxit=c(100, 33),
                      future_plan_strategy = "future.mirai::mirai_cluster",
                      save_model=NULL,
+                     deep_stripping = TRUE, # remove .Enviroments form fitted models
                      ...) {
 
 
@@ -368,6 +369,12 @@ vbgamlss <- function(imageframe,
                                       g$converged    <- g$iterations < maxit[1L]
                                       g$family       <- g$family$family
                                       g$vxl          <- vxlcol
+                                      if (deep_stripping){
+                                        attr(g$terms,
+                                             ".Environment") <- globalenv()
+                                        attr(g$formula,
+                                             ".Environment") <- globalenv()
+                                      }
                                     }
 
                                     # Save on disk to unload master
@@ -492,4 +499,19 @@ vbgamlss <- function(imageframe,
 # ========== #
 # DEPRECATED #
 # ========== #
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
