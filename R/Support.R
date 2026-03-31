@@ -89,7 +89,7 @@ predict.vbgamlss <- function(object,
   #  if (!is.null(segmentation)) segmentation <- segmentation[afold, , drop=FALSE]
   #}
 
-  # This works perfectly because the master session knows the S3 method
+  # record fam obj if missing
   familyobj <- restore_family(object[[1]])$family
   fname <- familyobj$family
 
@@ -127,7 +127,7 @@ predict.vbgamlss <- function(object,
       # process only if properly fitted (no error flag)
       if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
 
-        # recon family object (Core.R strips it to string to save memory)
+        # recon family object
         vxlgamlss$family <- familyobj
 
         # if multi tissue add

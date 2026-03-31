@@ -353,6 +353,7 @@ predictGD <- function (object,
 # --------------------------------
 # Test new fold Global Deviance
 testGD <- function(nfit, familyobj){
+  require(gamlss.dist, quietly = TRUE)
 
   ## Internal of predictGD ##
   dfun <- paste("d", familyobj$family, sep = "")
@@ -405,7 +406,7 @@ testGD <- function(nfit, familyobj){
   } else if (lpar == 2) {
     if (familyobj$family %in% gamlss:::.gamlss.bi.list) {
       devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma, bd = bd, log = TRUE)
-      ures <- call(pfun, q = y1, mu = nfit$nmu, sigma = nfit$sigma, bd = bd)
+      ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma, bd = bd)
     } else {
       devi <- call(dfun, x = y1, mu = nfit$mu, sigma = nfit$sigma, log = TRUE)
       ures <- call(pfun, q = y1, mu = nfit$mu, sigma = nfit$sigma)
@@ -428,7 +429,7 @@ testGD <- function(nfit, familyobj){
     }
   }
 
-  Vresid <- qNO(eval(ures))
+  Vresid <- gamlss.dist:::qNO(eval(ures))
   dev <- -2 * sum(eval(devi))
 
   # Mean Absolute Error (MAE) using the true predicted mean
