@@ -219,12 +219,12 @@ predictGD <- function (object,
   .state.dir = loginfo[2]
 
   ## predict GD ##
-  familyobj <- object[[1]]$family
+  familyobj <- restore_family(object[[1]])$family
 
   # .predicted.parameters
   fold.P.file = file.path(.state.dir, paste0('.fold.', .fold, '.predicted.parameters.qs'))
   if (resume & file.exists(fold.P.file)){
-    cat(paste0("- - found existing test fold predicted parameters, loading them"), fill=T)
+    cat(paste0("\t\t| found existing test fold predicted parameters, loading them"), fill=T)
     nfitted <- qs2::qs_read(fold.P.file)
   } else {
     quite(cat('\t| predicting test fold parameters', fill=T), skip=verbose)

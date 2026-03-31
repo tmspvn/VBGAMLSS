@@ -90,8 +90,8 @@ predict.vbgamlss <- function(object,
   #}
 
   # This works perfectly because the master session knows the S3 method
-  fname <- as.character(object[[1]]$family)
-  familyobj <- gamlss2:::complete_family(get(fname))
+  familyobj <- restore_family(object[[1]])$family
+  fname <- familyobj$family
 
   # compute chunk size
   Nchunks <- estimate_nchunks(object)
