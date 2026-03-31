@@ -219,10 +219,7 @@ predictGD <- function (object,
   .state.dir = loginfo[2]
 
   ## predict GD ##
-  fname <- as.character(object[[1]]$family)
-  familyobj <- gamlss2:::complete_family(get(fname))
-
-
+  familyobj <- object[[1]]$family
 
   # .predicted.parameters
   fold.P.file = file.path(.state.dir, paste0('.fold.', .fold, '.predicted.parameters.qs'))

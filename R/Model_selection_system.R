@@ -176,6 +176,7 @@ vbgamlss.model_selection <- function(# model selection commands
                                         resume       = T,
                                         drop_re      = T,
                                         logdir     = slurm$wd)
+                    warnings()
                     qs2::qs_save(out, slurm$rdsout)
                     ")
 
