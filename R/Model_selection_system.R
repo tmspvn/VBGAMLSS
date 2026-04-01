@@ -253,7 +253,7 @@ slurm_template <- function(){
 
 # Enviroment variables
 module load singularityce/4.1.0
-export SINGULARITY_BINDPATH="/users,/tmp,/reference,/dcsrsoft,/work,/scratch,/data,/dev/shm,/var/tmp,/var/spool/slurm,/etc/slurm,/run/munge,/var/run/munge"
+export SINGULARITY_BINDPATH="/users,/tmp,/reference,/dcsrsoft,/work,/scratch,/data"
 containeR=/data/PRTNR/CHUV/RADMED/ijelescu/micmap/tom/norming/containers/NormMod_R_v1.3.sif
 ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=<%= slurm$ncpu %>
 
