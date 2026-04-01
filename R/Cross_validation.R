@@ -188,7 +188,7 @@ vbgamlss.cv <- function(imageframe,
 
   # save the final result
   if (save_states){
-    cvres_filepath <- paste0(state.dir, 'vbgamlss.cvresults')
+    cvres_filepath <- file.path(state.dir, 'vbgamlss.cvresults')
     qs2::qs_save(cvresults, file = cvres_filepath)
     cat('Saved CV results: ', cvres_filepath, '\n')
   }
@@ -762,39 +762,3 @@ akaike_weights <- function(v){
 #                                 DEPRECATED                                   #
 #===============================================================================
 
-get_fixed_terms_old <- function(m) {
-  m <- restore_family(m)
-  pnames <- m$family$names
-  form_list <- list()
-  for (i in seq_along(pnames)) {
-    form_list[[pnames[i]]] <- formula(m$formula, rhs = i)
-  }
-
-  # Identify re for each formula
-  clean_terms_list <- list()
-  for (param in names(form_list)) {
-
-    # Extract the term labels
-    term_obj <- terms(form_list[[param]])
-    all_terms <- attr(term_obj, "term.labels")
-
-    # If not just an intercept ~1
-    if (length(all_terms) > 0) {
-
-      # - bs\\s*=\\s*['\"]re['\"] : Catches bs='re' or bs="re" with any spacing
-      # - ^random\\( | ^re\\(     : Catches legacy gamlss random effect wrappers
-      is_random_effect <- grepl("bs\\s*=\\s*['\"]re['\"]", all_terms) |
-        grepl("^random\\(", all_terms) |
-        grepl("^re\\(", all_terms)
-
-      # Keep only the terms that are not re
-      clean_terms_list[[param]] <- c("(Intercept)", all_terms[!is_random_effect])
-
-    } else {
-      # return an empty character vector if intercept
-      clean_terms_list[[param]] <- "(Intercept)"
-    }
-  }
-
-  return(clean_terms_list)
-}

@@ -150,7 +150,7 @@ vbgamlss.model_selection <- function(# model selection commands
 
       # Populate call
       CALL <- glue("
-                    load('{registry['genv']}')
+                    load('{registry$genv}')
                     load('{slurm$jenv}')
                     suppressWarnings(
                       suppressPackageStartupMessages(
@@ -253,7 +253,7 @@ slurm_template <- function(){
 
 # Enviroment variables
 module load singularityce/4.1.0
-export SINGULARITY_BINDPATH="/users,/tmp,/reference,/dcsrsoft,/work,/scratch,/data,/dev/shm,/var/tmp"
+export SINGULARITY_BINDPATH="/users,/tmp,/reference,/dcsrsoft,/work,/scratch,/data,/dev/shm,/var/tmp,/var/spool/slurm,/etc/slurm,/run/munge,/var/run/munge"
 containeR=/data/PRTNR/CHUV/RADMED/ijelescu/micmap/tom/norming/containers/NormMod_R_v1.3.sif
 ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=<%= slurm$ncpu %>
 
@@ -475,8 +475,8 @@ monitor_jobs <- function(registry, sleep=10, resbatch=NULL) {
 
 # -----------------------------------------------------------
 gather_jobs_outputs <- function(registry){
-  final <- setNames(lapply(seq_along(registry$formulas),
+  final <- setNames(lapply(seq_along(registry$formula),
                            function(i) qs2::qs_read(registry$jobs_results[[i]])),
-                    registry$formulas)
+                    registry$formula)
   return(final)
 }
