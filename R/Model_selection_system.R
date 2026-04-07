@@ -406,9 +406,11 @@ jobs_status <- function(registry, param='status') {
 monitor_jobs <- function(registry, sleep=10, resbatch=NULL) {
   RUNNING = TRUE
   start_time = Sys.time()
+  finished <- F
   ct=0
   while (RUNNING) {
     Sys.sleep(1)
+
     if ((ct %% sleep) == 0) {
       ct <- 0
       # Format status into a data frame
@@ -445,6 +447,7 @@ monitor_jobs <- function(registry, sleep=10, resbatch=NULL) {
                                      "OUT_OF_ME+",
                                      "NODE_FAIL", "PREEMPTED",
                                      "REVOKED", "TIMEOUT"))) {
+        finished <- T
         break
       } }
 
@@ -459,7 +462,7 @@ monitor_jobs <- function(registry, sleep=10, resbatch=NULL) {
     ct <- ct + 1
   }
 
-  system("clear")
+  if (! finished) {system("clear")} # skip clear if it is done
   return(registry)
 }
 

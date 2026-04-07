@@ -98,6 +98,7 @@ predict.vbgamlss <- function(object,
 
   # predict setup
   future::plan(strategy="future::cluster", workers=num_cores)
+  options(future.globals.maxSize=5*1024^3) # 5 GB max per prediction
 
   # split indices to match Core.R chunking
   chunked_indices <- as.list(itertools::isplitIndices(length(object), chunks=Nchunks))
