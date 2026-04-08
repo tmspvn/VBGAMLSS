@@ -103,7 +103,7 @@ vbgamlss_model <- vbgamlss(
 )
 ```
 
-#### After a great amount of time... 
+#### After few hours (less than 8h for 150k voxels on 40 cores)
 
 ```r
 # Save / load
