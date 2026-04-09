@@ -479,8 +479,8 @@ testGD <- function(nfit, familyobj){
   Vresid_na[! yisnan] <- Vresid
 
   # output
-  out <- list(TGD          = dev, # tot deviance across obs
-              predictError = dev/length(nfit$mu), # mean deviance across obs
+  out <- list(TGD          = dev,
+              predictError = dev/length(nfit$mu),
               resid        = Vresid_na,
               MAE          = vxl_mae,
               LL           = vxl_ll,
@@ -677,7 +677,7 @@ getCVGD <- function(cvresults, term='mean') {
 getCVGD.pen <- function(cvresults, term='quantile.50%') {
   CVGD = 0
   for (fold in cvresults) {CVGD <- CVGD + fold$GDpen[[term]]}
-  return(CVGD / length(cvresults))
+  return(CVGD)
 }
 
 
