@@ -183,6 +183,33 @@ vbgamlss.cv <- function(imageframe,
     gc()
   }
 
+
+  # --------------------------------------------------------
+  # Gather previously completed folds from disk
+  if (resume && resume_from > 1) {
+    cat('\t| Compiling final results: loading previously completed folds', fill = T)
+    for (past_fold in 1:(resume_from - 1)) {
+
+      # Check the registry matrix (row 4 is the 'done' state)
+      if (registry[4, past_fold] == TRUE) {
+        past_res_file <- file.path(state.dir, paste0('.fold.', past_fold, '.results.qs'))
+
+        if (file.exists(past_res_file)) {
+          past_data <- tryCatch(qs2::qs_read(past_res_file), error = function(e) NULL)
+
+          # Safely extract the target fold from the past list
+          if (!is.null(past_data) && !is.null(past_data[[past_fold]])) {
+            cvresults[[past_fold]] <- past_data[[past_fold]]
+          } else {
+            warning(paste("Could not extract data for fold", past_fold, "from the saved state file."))
+          }
+        }
+      }
+    }
+  }
+
+
+  # --------------------------------------------------------
   # Give a name to each fold
   names(cvresults) <- paste0("fold", seq_along(cvresults))
 
