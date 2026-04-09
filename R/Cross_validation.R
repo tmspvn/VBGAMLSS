@@ -667,7 +667,7 @@ stratCVfolds <- function(df, k.fold=10){
 getCVGD <- function(cvresults, term='mean') {
   CVGD = 0
   for (fold in cvresults) {CVGD <- CVGD + fold$GD[[term]]}
-  return(CVGD)
+  return(CVGD / length(cvresults))
 }
 
 
@@ -677,7 +677,7 @@ getCVGD <- function(cvresults, term='mean') {
 getCVGD.pen <- function(cvresults, term='quantile.50%') {
   CVGD = 0
   for (fold in cvresults) {CVGD <- CVGD + fold$GDpen[[term]]}
-  return(CVGD)
+  return(CVGD / length(cvresults))
 }
 
 
