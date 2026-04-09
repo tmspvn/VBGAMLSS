@@ -479,8 +479,8 @@ testGD <- function(nfit, familyobj){
   Vresid_na[! yisnan] <- Vresid
 
   # output
-  out <- list(TGD          = dev,
-              predictError = dev/length(nfit$mu),
+  out <- list(TGD          = dev, # tot deviance across obs
+              predictError = dev/length(nfit$mu), # mean deviance across obs
               resid        = Vresid_na,
               MAE          = vxl_mae,
               LL           = vxl_ll,
@@ -667,7 +667,7 @@ stratCVfolds <- function(df, k.fold=10){
 getCVGD <- function(cvresults, term='mean') {
   CVGD = 0
   for (fold in cvresults) {CVGD <- CVGD + fold$GD[[term]]}
-  return(CVGD / length(cvresults))
+  return(CVGD)
 }
 
 
