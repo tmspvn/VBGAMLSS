@@ -156,7 +156,7 @@ vbgamlss.cv <- function(imageframe,
       if (save_states){qs2::qs_save(registry, reg.file)}
     }
 
-    # get statistics for validation Global Deviance
+    # get statistics for validation Global Deviance brain-wide
     cat('\t| Summarizing statistics', fill=T)
     stats <- statGD(GDs,
                     k.penalty,
@@ -190,7 +190,7 @@ vbgamlss.cv <- function(imageframe,
     cat('\t| Compiling final results: loading previously completed folds', fill = T)
     for (past_fold in 1:(resume_from - 1)) {
 
-      # Check the registry matrix (row 4 is the 'done' state)
+      # Check the registry matrix
       if (registry[4, past_fold] == TRUE) {
         past_res_file <- file.path(state.dir, paste0('.fold.', past_fold, '.results.qs'))
 
@@ -378,7 +378,7 @@ predictGD <- function (object,
 
 
 # --------------------------------
-# Test new fold Global Deviance
+# Test new fold Global Deviance VOXEL-WISE inside predictGD
 testGD <- function(nfit, familyobj){
   require(gamlss.dist, quietly = TRUE)
 
@@ -491,7 +491,7 @@ testGD <- function(nfit, familyobj){
 
 
 # --------------------------------
-# Summarize fold Global Deviance statistics
+# Summarize fold Global Deviance statistics BRAIN-WIDE
 statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
   missfits <- sum(is.na(GDs))
   nsub <- length(GDs[[1]]$resid)

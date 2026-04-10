@@ -63,6 +63,7 @@ vbgamlss <- function(imageframe,
                      #afold=NULL,
                      debug=F, # toggle debugging (if T, retains cache dir at the end)
                      cachedir=getwd(), # directory caching
+                     cache_id = NULL, # give the cachedir a specific name ie {cachedir}/{<chache id>}.vbgamlss.cache.{<rand string>}
                      force_constraints=c(1e-8, +Inf),
                      warm_start=NULL, # per voxel by param
                      show_progress=T,
@@ -195,7 +196,7 @@ vbgamlss <- function(imageframe,
 
     # Make main cache folder
     fit_rand_id <- rand_names(1, l=4)
-    cachedir <- file.path(cachedir, paste0('.vbgamlss.cache.', fit_rand_id))
+    cachedir <- file.path(cachedir, paste0(cache_id, '.vbgamlss.cache.', fit_rand_id))
     dir.create(cachedir, recursive = T, showWarnings = F)
 
     # Make folder for debugging
@@ -435,7 +436,9 @@ vbgamlss <- function(imageframe,
       sum(isconverged == 1),  'converged,',
       sum(isconverged == 2),  'did not, and',
       sum(isconverged == 404),'went missing. \n')
-
+  registry$fitted <- isconverged == 1
+  # Final registry update
+  qs2::qs_save(registry, registry_path)
 
   # Aggregating
   cat("Aggregating individual voxel models\n")

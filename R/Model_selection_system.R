@@ -483,3 +483,141 @@ gather_jobs_outputs <- function(registry){
                     registry$formula)
   return(final)
 }
+
+
+
+
+
+
+# -----------------------------------------------------------
+#' @export
+cleanup_cv_cached_voxels <- function(resume_registry, dry_run = TRUE) {
+
+  if (!file.exists(resume_registry)) {
+    stop("Error: SLURM registry file not found at ", resume_registry)
+  }
+
+  cat("Loading SLURM registry:", resume_registry, "\n")
+  slurm_reg <- qs2::qs_read(resume_registry)
+  n_jobs <- length(slurm_reg$jobspaths)
+  cat("Found", n_jobs, "jobs (formulas) in the registry.\n\n")
+
+  total_freed <- 0
+
+  for (i in seq_len(n_jobs)) {
+    job_dir <- slurm_reg$jobspaths[i]
+
+    # Format formula nicely for the log
+    f_str <- "Unknown Formula"
+    if (!is.null(slurm_reg$formula) && length(slurm_reg$formula) >= i) {
+      f_str <- paste(deparse(slurm_reg$formula[[i]]), collapse = " ")
+    }
+
+    cat(sprintf("Job %d/%d;", i, n_jobs), f_str, "\n")
+
+    state_dir <- file.path(job_dir, "vbgamlss.cv.states")
+
+    if (!dir.exists(state_dir)) {
+      cat("\t| No CV states directory found, skipping. \n")
+      next
+    }
+
+    # Locate all random cache directories for this specific job's folds
+    cache_dirs <- list.dirs(state_dir, recursive = FALSE, full.names = TRUE)
+    cache_dirs <- cache_dirs[grepl("\\.vbgamlss\\.cache", basename(cache_dirs))]
+
+    if (length(cache_dirs) == 0) {
+      cat("\t| No vbgamlss caches found in states directory, skipping.\n")
+      next
+    }
+
+    # Iterate through the caches generated for this job's folds
+    for (j in seq_along(cache_dirs)) {
+      cdir <- cache_dirs[j]
+      cache_name <- basename(cdir)
+      local_reg_path <- file.path(cdir, ".vbgamlss.registry")
+      voxfits_dir <- file.path(cdir, ".voxfits")
+
+      if (!file.exists(local_reg_path)) {
+        cat(sprintf("\t\t| Cache %d/%d (%s): Missing internal registry, skipping.\n", j, length(cache_dirs), cache_name))
+        next
+      }
+
+      # Safely read the local voxel registry
+      local_reg <- tryCatch({ qs2::qs_read(local_reg_path) }, error = function(e) NULL)
+
+      if (is.null(local_reg)) {
+        cat(sprintf("\t\t| Cache %d/%d (%s): Corrupted internal registry, skipping.\n", j, length(cache_dirs), cache_name))
+        next
+      }
+
+      # Check convergence status
+      total_voxels     <- nrow(local_reg)
+      fitted_voxels    <- sum(local_reg$fitted == TRUE, na.rm = TRUE)
+      converged_voxels <- sum(local_reg$converged == TRUE, na.rm = TRUE)
+
+      if (fitted_voxels < total_voxels) {
+        cat(sprintf("\t\t| Cache %d/%d (%s): Incomplete (%d/%d fitted), skipping.\n",
+                    j, length(cache_dirs), cache_name, fitted_voxels, total_voxels))
+        next
+      }
+
+      if (converged_voxels < total_voxels) {
+        cat(sprintf("\t\t| Cache %d/%d (%s): %d voxels failed to converge, skipping.\n",
+                    j, length(cache_dirs), cache_name, total_voxels - converged_voxels))
+        next
+      }
+
+      # If we reach here, this fold's cache is fully fitted and 100% converged. Nuke the temporary files.
+      if (dir.exists(voxfits_dir)) {
+        files_to_delete <- list.files(voxfits_dir, full.names = TRUE, all.files = TRUE)
+        n_files <- length(files_to_delete)
+
+        if (n_files > 0) {
+          if (dry_run) {
+            cat(sprintf("\t\t| Cache %d/%d (%s): dry_run=TRUE, %d files could be deleted.\n",
+                        j, length(cache_dirs), cache_name, n_files))
+          } else {
+            cat(sprintf("\t\t| Cache %d/%d (%s): Deleting %d files.\n",
+                        j, length(cache_dirs), cache_name, n_files))
+            unlink(files_to_delete, force = TRUE)
+          }
+          total_freed <- total_freed + n_files
+        } else {
+          cat(sprintf("\t\t| Cache %d/%d (%s): .voxfits already empty, skipping.\n", j, length(cache_dirs), cache_name))
+        }
+      } else {
+        cat(sprintf("\t\t| Cache %d/%d (%s): No .voxfits directory, skipping.\n", j, length(cache_dirs), cache_name))
+      }
+    }
+    cat("\n")
+  }
+
+  cat("Done.\n")
+  return(NULL)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
