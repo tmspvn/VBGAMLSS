@@ -15,6 +15,7 @@ vbgamlss(
   chunk_max_mb = 64,
   debug = F,
   cachedir = getwd(),
+  cache_id = NULL,
   force_constraints = c(1e-08, +Inf),
   warm_start = NULL,
   show_progress = T,
