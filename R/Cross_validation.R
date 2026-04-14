@@ -364,13 +364,21 @@ predictGD <- function (object,
   plan(strategy="future::cluster", workers=availableCores())
   GDs <- foreach(i=seq_along(nfitted)) %dofuture% {
     if (not_missfits[i]) {
-      vxlGD <- testGD(nfitted[[i]], familyobj)
-      vxlGD$vxl <- nfitted[[i]]$vxl
-      vxlGD
+
+      # Wrapped in tryCatch to catch uniroot failures
+      tryCatch({
+        vxlGD <- testGD(nfitted[[i]], familyobj)
+        vxlGD$vxl <- nfitted[[i]]$vxl
+        vxlGD
+      }, error = function(e) {
+        NA # Return NA if the math fails
+      })
+
     } else {
       NA
     }
   }
+
   class(GDs) <- "vbgamlss.predictions.GD"
   GDs
 }

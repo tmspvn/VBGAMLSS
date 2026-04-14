@@ -141,12 +141,22 @@ predict.vbgamlss <- function(object,
           }}
 
         # predict
-        pred_res <- predict(vxlgamlss,
-                            newdata = newdata,
-                            type = ptype,
-                            terms = terms,
-                            what = what,
-                            ...)
+        pred_res <- tryCatch({
+          predict(vxlgamlss,
+                  newdata = newdata,
+                  type = ptype,
+                  terms = terms,
+                  what = what,
+                  ...)
+        }, error = function(e) {
+          # Return an object of class "try-error"
+          structure(e$message, class = "try-error")
+        })
+
+        # If the prediction failed, return NA immediately for this voxel
+        if (inherits(pred_res, "try-error")) {
+          return(NA)
+        }
 
         # Structure the list correctly
         if (!is.null(what) && length(what) == 1) {
