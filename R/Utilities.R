@@ -204,9 +204,10 @@ combine_formulas_gamlss2 <- function(mu_list, sigma_list,
     return(lst)
   }
   # add intercept?
-  sigma_list <- add_intercept_if_missing(sigma_list)
-  nu_list <- add_intercept_if_missing(nu_list)
-  tau_list <- add_intercept_if_missing(tau_list)
+  #sigma_list <- add_intercept_if_missing(sigma_list)
+  #nu_list <- add_intercept_if_missing(nu_list)
+  #tau_list <- add_intercept_if_missing(tau_list)
+
   # combine
   combined_formulas <- c()
   i <- 0
