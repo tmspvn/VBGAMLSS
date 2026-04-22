@@ -116,7 +116,7 @@ predict.vbgamlss <- function(object,
     chunk_raw_bytes <- lapply(idx_chunk, function(idx) .subset2(object, idx))
 
     # parallel call using future_lapply
-    subpr <- future.apply::future_lapply(seq_along(chunk_raw_bytes), function(k) {
+    subpr <- future.apply::future_lapply(seq_along(idx_chunk), function(k) {
 
       # Grab the raw bytes for this specific worker
       raw_data <- chunk_raw_bytes[[k]]
@@ -178,6 +178,7 @@ predict.vbgamlss <- function(object,
 
     # Put the chunk results into the pre-allocated list
     predictions[idx_chunk] <- subpr
+    gc(verbose = F)
   }
 
   gc(verbose = FALSE)
@@ -283,13 +284,147 @@ zscore.vbgamlss <- function(predictions, yimageframe, num_cores=NULL){
 
 
 
+#' Apply kernel james-stein shrinkage to intercept coefficients of a vbgamlss
+#'
+#' @export
+james_stein <- function(object,
+                        mask,
+                        yimageframe,
+                        save_model=NULL,
+                        radius_voxels=4,
+                        num_cores=NULL){
 
+  # Internal
+  JS <- function(theta_hat, sigma2) {
+    N <- length(theta_hat)
+    theta_bar <- mean(theta_hat)
+    # SSD sum of squared deviations
+    V <- sum((theta_hat - theta_bar)^2)
+    # c+
+    c_plus <- pmax(0, 1 - ((N - 2) * sigma2) / V)
+    # Calculate the shrunken estimates
+    theta_js <- theta_bar + c_plus * (theta_hat - theta_bar)
+    return(theta_js)
+  }
 
+  # checks
+  if (is.character(mask)) {
+    if (!file.exists(mask)) stop("File does not exist: ", mask)
+    mask <- antsImageRead(mask)
+  }
 
+  # Matrix conversion for much faster column subsetting
+  if (!is.data.frame(yimageframe) && !is.matrix(yimageframe)) {
+    stop("Error: yimageframe must be a data.frame or matrix")
+  }
 
+  yimageframe <- as.matrix(yimageframe)
+  mask_array <- as.array(mask)
+  vox_coords <- which(mask_array > 0, arr.ind = TRUE)
 
+  # parallel setup
+  if (is.null(num_cores)) {num_cores <- future::availableCores()}
+  future::plan(strategy="future::cluster", workers=num_cores)
+  options(future.globals.maxSize=10*1024^3) # 10 GB max
 
+  # Finds 'k' neighbors
+  neighbors <- dbscan::kNN(vox_coords, k = round(4.188 *(radius_voxels^3)))$id
 
+  # ----------------------------------------------------------------------------
+  # Must loop like this otherwise it copies the whole model a ton of times
+  nvox <- dim(neighbors)[1]
+  all_voxels_js_coefs <- vector("list", nvox)
+
+  # Per voxel do:
+  for (vxl in 1:nvox) {
+
+    kernel_idx <- neighbors[vxl,]
+    # Extract ONLY the raw bytes for the subset of voxel for the kernel
+    kernel_mods <- lapply(kernel_idx, function(idx) .subset2(object, idx))
+    kernel_y <- yimageframe[, kernel_idx]
+
+    # parallelise extraction
+    kernel_coefs <- future.apply::future_lapply(seq_along(kernel_mods), function(k) {
+
+      # Grab the raw bytes for this specific worker
+      raw_data <- kernel_mods[[k]]
+      # Explicitly deserialize inside the worker
+      if (is.null(raw_data)) return(NA)
+      vxlgamlss <- qs2::qs_deserialize(raw_data)
+
+      # get error
+      e <- kernel_y[, k] - predict(vxlgamlss, type = "response")
+
+      # extract coefficients
+      vxlcoefs <- unlist(coef(vxlgamlss))
+      vxlcoefs['var.err'] <-  var(e)
+
+      # return coefficients
+      vxlcoefs
+
+    })
+
+    # bind output
+    kernel_coefs <- as.data.frame(do.call(rbind, kernel_coefs))
+
+    # compute James-stein shrinkage
+    sigma2_noise <- kernel_coefs[['var.err']]
+    kernel_coefs[["var.err"]] <- NULL
+
+    vxl_js_matrix <- apply(kernel_coefs, 2, function(x) JS(x, sigma2_noise))
+    vxl_js <- vxl_js_matrix[1, ]
+
+    # store
+    all_voxels_js_coefs[[vxl]] <- vxl_js
+
+    cat("Voxel", vxl, 'of', nvox, fill = TRUE)
+    flush.console()
+  }
+
+  # bind output again
+  all_voxels_js_coefs <- as.data.frame(do.call(rbind, all_voxels_js_coefs))
+  coefs_names <- names(all_voxels_js_coefs)
+
+  # ----------------------------------------------------------------------------
+  # Loop again to assign the new shrieked coefficients
+  for (vxl in 1:nvox) {
+
+    # Subset and deserialize
+    new_coef <- all_voxels_js_coefs[vxl,]
+    raw_data <- .subset2(object, vxl)
+    if (is.null(raw_data)) next
+
+    vxlgamlss <- qs2::qs_deserialize(raw_data)
+
+    # Map values back to the internal vxlgamlss structure
+    for (par in names(vxlgamlss$coefficients)) {
+      # Identify indices belonging to this parameter
+      pattern <- paste0("^", par, "\\.")
+      par_vals <- new_coef[grep(pattern, names(new_coef))]
+      # Remove the "mu." prefix so names match internal (Intercept), sexM, etc.
+      names(par_vals) <- gsub(pattern, "", names(par_vals))
+      # Assign back to the model object
+      vxlgamlss$coefficients[[par]] <- par_vals
+    }
+
+    # reserialize and replace
+    object[[vxl]] <- qs2::qs_serialize(vxlgamlss)
+
+    cat("Voxel", vxl, 'of', nvox, fill = TRUE)
+    flush.console()
+  }
+
+  # Done save model back
+  if (!is.null(save_model)) {
+    qs2::qs_save(object, # FIXED: Save 'object', not undefined 'models'
+                 file = paste0(save_model, '.JS.vbgamlss'),
+                 compress_level = 0L) # uncompressed
+    cat('Model saved: ', paste0(save_model, '.JS.vbgamlss'), '\n')
+    return(NULL)
+  } else {
+    return(object)
+  }
+}
 
 
 

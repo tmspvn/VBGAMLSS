@@ -510,6 +510,75 @@ deep_env_stripping <- function(model) {
 # ================== #
 
 
+# # CONSIDER REPLACING list of binary with binary of binary stored locally
+#
+# cat("Consolidating models into a single binary archive\n")
+#
+# archive_file <- "vbgamlss_archive.bin"
+# con <- file(archive_file, "wb") # Open for binary writing
+#
+# offsets <- numeric(nvox)
+# lengths <- numeric(nvox)
+# current_byte_pos <- 0
+#
+# for (i in seq_along(registry$full_paths)) {
+#   # 1. Read the temporary individual file (or generate the raw bytes directly)
+#   f_size <- file.info(registry$full_paths[i])$size
+#   raw_bytes <- readBin(registry$full_paths[i], what = "raw", n = f_size)
+#
+#   # 2. Record where this model lives in the giant file
+#   offsets[i] <- current_byte_pos
+#   lengths[i] <- length(raw_bytes)
+#
+#   # 3. Write bytes to the archive and advance the position counter
+#   writeBin(raw_bytes, con)
+#   current_byte_pos <- current_byte_pos + lengths[i]
+# }
+#
+# close(con)
+
+
+# # Your object now uses almost zero RAM
+# models <- structure(
+#   list(
+#     archive = archive_file,
+#     offsets = offsets,
+#     lengths = lengths
+#   ),
+#   class = "vbgamlss"
+# )
+#
+
+# # S3 method class to load it
+# `[[.vbgamlss` <- function(x, i, ...) {
+#   # Open connection to the single large file
+#   con <- file(x$archive, "rb")
+#
+#   # Ensure the connection closes even if an error occurs
+#   on.exit(close(con))
+#
+#   # Jump straight to the model's location on the disk
+#   seek(con, where = x$offsets[i], origin = "start")
+#
+#   # Read only the bytes for this specific model
+#   raw_bytes <- readBin(con, what = "raw", n = x$lengths[i])
+#
+#   restore_family(qs2::qs_deserialize(raw_bytes))
+# }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ========== #
 # DEPRECATED #
 # ========== #
