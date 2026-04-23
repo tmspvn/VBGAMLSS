@@ -156,7 +156,10 @@ predict.vbgamlss <- function(object,
           predict(vxlgamlss, newdata = vxl_newdata, type = ptype, terms = terms, what = what, ...)
         }, error = function(e) structure(e$message, class = "try-error"))
 
-        if (inherits(pred_res, "try-error")) return(NA)
+        if (inherits(pred_res, "try-error")) {
+          message("Prediction failed for voxel ", k, ": ", pred_res)
+          return(NA)
+        }
 
         if (!is.null(what) && length(what) == 1) {
           l <- list()
