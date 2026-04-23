@@ -96,7 +96,7 @@ predict.vbgamlss <- function(object,
   } else {
     future::plan(strategy=future_plan_strategy, workers=num_cores)
   }
-  options(future.globals.maxSize=40*1024^3) # 10 GB max per prediction
+  options(future.globals.maxSize=10*1024^3) # 10 GB max per prediction
 
   # get blas omp values
   master_blas <- RhpcBLASctl::blas_get_num_procs()
@@ -105,35 +105,35 @@ predict.vbgamlss <- function(object,
   # split indices to match Core.R chunking
   chunked_indices <- as.list(itertools::isplitIndices(length(object), chunks=Nchunks))
 
-  # 1. PRE-EXTRACT CHUNKS ON MASTER
-  # Creates a list of chunks, where each chunk is a list of raw bytes
+  # 1. PRE-EXTRACT CHUNKS AND BUNDLE DATA
   cat("Extracting data chunks...\n")
-  chunk_list <- lapply(chunked_indices, function(idx_chunk) {
-    lapply(idx_chunk, function(idx) .subset2(object, idx))
+  prepared_chunks <- lapply(chunked_indices, function(idx_chunk) {
+    list(
+      raw_bytes = lapply(idx_chunk, function(idx) .subset2(object, idx)),
+      seg_data  = if (!is.null(segmentation)) segmentation[, idx_chunk, drop = FALSE] else NULL
+    )
   })
+
+  # 2. NUKE THE MASTER OBJECTS TO PREVENT MEMORY LEAKS TO WORKERS
+  # This stops the "FUN() is 18 GiB" error dead in its tracks.
+  rm(object)
+  if (exists("segmentation")) rm(segmentation)
+  gc(verbose = FALSE)
 
   cat(paste0("Predicting across ", Nchunks, " chunks...\n"))
 
-  # 2. PARALLELIZE ACROSS CHUNKS (Not voxels)
-  chunk_predictions <- future.apply::future_lapply(seq_along(chunk_list), function(i) {
+  # 3. PARALLELIZE OVER THE LIST DIRECTLY
+  # By passing `prepared_chunks` as X, future splits it and sends only 1 chunk per worker.
+  chunk_predictions <- future.apply::future_lapply(prepared_chunks, function(chunk) {
 
     # WORKER THREAD CONTROL
     if (RhpcBLASctl::blas_get_num_procs() > 1L) {RhpcBLASctl::blas_set_num_threads(1L)}
     if (RhpcBLASctl::omp_get_num_procs() > 1L)  {RhpcBLASctl::omp_set_num_threads(1L)}
 
-    raw_chunk <- chunk_list[[i]]
-    idx_chunk <- chunked_indices[[i]]
+    # SEQUENTIAL PROCESSING WITHIN THE WORKER
+    chunk_res <- lapply(seq_along(chunk$raw_bytes), function(k) {
 
-    # Pre-subset segmentation for this chunk ONLY
-    chunk_seg <- NULL
-    if (!is.null(segmentation)) {
-      chunk_seg <- segmentation[, idx_chunk, drop = FALSE]
-    }
-
-    # 3. SEQUENTIAL PROCESSING WITHIN THE WORKER
-    chunk_res <- lapply(seq_along(raw_chunk), function(k) {
-
-      raw_data <- raw_chunk[[k]]
+      raw_data <- chunk$raw_bytes[[k]]
       if (is.null(raw_data)) return(NA)
 
       vxlgamlss <- qs2::qs_deserialize(raw_data)
@@ -145,8 +145,8 @@ predict.vbgamlss <- function(object,
 
         # Subsetting happens safely inside the sequential loop
         vxl_newdata <- newdata
-        if (!is.null(chunk_seg)) {
-          vxl_newdata$tissue <- chunk_seg[, k]
+        if (!is.null(chunk$seg_data)) {
+          vxl_newdata$tissue <- chunk$seg_data[, k]
           if (!is.null(segmentation_target)) {
             vxl_newdata <- vxl_newdata[vxl_newdata$tissue == segmentation_target, , drop = FALSE]
           }
@@ -182,14 +182,11 @@ predict.vbgamlss <- function(object,
   if (RhpcBLASctl::omp_get_num_procs() != master_omp)   {RhpcBLASctl::omp_set_num_threads(master_omp)}
 
   # 4. FLATTEN RESULTS
-  # unlist(..., recursive = FALSE) converts the list of chunks back into a single list of voxels
   predictions <- unlist(chunk_predictions, recursive = FALSE)
 
   gc(verbose = FALSE)
   return(structure(predictions, class = "vbgamlss.predictions"))
 }
-
-
 
 
 
