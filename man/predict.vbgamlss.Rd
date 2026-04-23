@@ -14,6 +14,7 @@
   afold = NULL,
   terms = NULL,
   what = NULL,
+  future_plan_strategy = "future.mirai::mirai_cluster",
   ...
 )
 }
