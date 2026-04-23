@@ -80,15 +80,8 @@ predict.vbgamlss <- function(object,
     if (!is.data.frame(segmentation) && !is.matrix(segmentation)) {
       stop("Error: segmentation must be a data.frame or matrix")
     }
+    segmentation <- as.matrix(segmentation)
   }
-
-  # subset the dataframe if the input is a fold from CV
-  #if (!is.null(afold)){
-  #  if (!is.logical(afold) && !is.integer(afold)) {
-  #    stop("Error: afold must be either logical or integer vector.")
-  #  }
-  #  if (!is.null(segmentation)) segmentation <- segmentation[afold, , drop=FALSE]
-  #}
 
   # record fam obj if missing
   familyobj <- restore_family(object[[1]])$family
@@ -105,7 +98,8 @@ predict.vbgamlss <- function(object,
     future::plan(strategy=future_plan_strategy, workers=num_cores)
   }
   options(future.globals.maxSize=10*1024^3) # 10 GB max per prediction
-  # get blas omp values?
+
+  # get blas omp values
   master_blas <- RhpcBLASctl::blas_get_num_procs()
   master_omp  <- RhpcBLASctl::omp_get_max_threads()
 
@@ -120,25 +114,47 @@ predict.vbgamlss <- function(object,
     idx_chunk <- chunked_indices[[i]]
     cat(paste0("Chunk: ", i, "/", Nchunks, " (Predicting)\n"))
 
-    # Extract ONLY the raw bytes for this chunk in the master session.
-    # .subset2 bypasses the S3 method, keeping them as lightweight raw bytes.
-    chunk_raw_bytes <- lapply(idx_chunk, function(idx) .subset2(object, idx))
+    # 1. PREPROCESSING OUTSIDE WORKERS (Matching vbgamlss dispatch logic)
+    if (!is.null(segmentation)) {
+      voxelseg_chunked <- segmentation[, idx_chunk, drop = FALSE]
+    }
 
-    # parallel call using future_lapply
-    subpr <- future.apply::future_lapply(seq_along(idx_chunk), function(k) {
+    prep_func <- function(k) {
+      true_idx <- idx_chunk[k]
+      vxl_newdata <- newdata
+
+      if (!is.null(segmentation)) {
+        vxl_newdata$tissue <- voxelseg_chunked[, k]
+        if (!is.null(segmentation_target)) {
+          vxl_newdata <- vxl_newdata[vxl_newdata$tissue == segmentation_target, , drop = FALSE]
+        }
+      }
+
+      list(
+        raw_data = .subset2(object, true_idx),
+        newdata  = vxl_newdata
+      )
+    }
+
+    prepared_voxel_data <- lapply(seq_along(idx_chunk), prep_func)
+
+    # Clean up to free memory before parallel execution
+    if (!is.null(segmentation)) rm(voxelseg_chunked)
+    gc(verbose = FALSE)
+
+
+    # 2. PARALLEL EXECUTION
+    subpr <- future.apply::future_lapply(prepared_voxel_data, function(vxl_item) {
 
       # WORKER THREAD CONTROL
       if (RhpcBLASctl::blas_get_num_procs() > 1L)
-        {RhpcBLASctl::blas_set_num_threads(1L)}
+      {RhpcBLASctl::blas_set_num_threads(1L)}
       if (RhpcBLASctl::omp_get_num_procs() > 1L)
-        {RhpcBLASctl::omp_set_num_threads(1L)}
+      {RhpcBLASctl::omp_set_num_threads(1L)}
 
-      # Grab the raw bytes for this specific worker
-      raw_data <- chunk_raw_bytes[[k]]
-
-      # Explicitly deserialize inside the worker, bypasses the S3 inheritance problem.
-      if (is.null(raw_data)) return(NA)
-      vxlgamlss <- qs2::qs_deserialize(raw_data)
+      # Explicitly deserialize inside the worker
+      if (is.null(vxl_item$raw_data)) return(NA)
+      vxlgamlss <- qs2::qs_deserialize(vxl_item$raw_data)
 
       # process only if properly fitted (no error flag)
       if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
@@ -146,29 +162,19 @@ predict.vbgamlss <- function(object,
         # recon family object
         vxlgamlss$family <- familyobj
 
-        # if multi tissue add
-        if (!is.null(segmentation)){
-          # Note: k is the index within the chunk. To get the true voxel index for segmentation:
-          true_idx <- idx_chunk[k]
-          newdata$tissue <- segmentation[, true_idx]
-          if (!is.null(segmentation_target)){
-            newdata <- newdata[newdata$tissue == segmentation_target, , drop=FALSE]
-          }}
-
-        # predict
+        # predict using the pre-assembled voxel-specific newdata
         pred_res <- tryCatch({
           predict(vxlgamlss,
-                  newdata = newdata,
+                  newdata = vxl_item$newdata,
                   type = ptype,
                   terms = terms,
                   what = what,
                   ...)
         }, error = function(e) {
-          # Return an object of class "try-error"
           structure(e$message, class = "try-error")
         })
 
-        # If the prediction failed, return NA immediately for this voxel
+        # If prediction failed, return NA
         if (inherits(pred_res, "try-error")) {
           return(NA)
         }
@@ -191,11 +197,11 @@ predict.vbgamlss <- function(object,
       }
     }, future.seed = TRUE)
 
-    # Put the chunk results into the pre-allocated list
+    # Put chunk results into the pre-allocated list
     predictions[idx_chunk] <- subpr
-    gc(verbose = F)
+    gc(verbose = FALSE)
 
-    # Reverse blas and openmp threads control, probably useless
+    # Reverse blas and openmp threads control
     if (RhpcBLASctl::blas_get_num_procs() != master_blas)
     {RhpcBLASctl::blas_set_num_threads(master_blas)}
     if (RhpcBLASctl::omp_get_num_procs() != master_omp)
