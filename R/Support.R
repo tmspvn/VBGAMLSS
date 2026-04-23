@@ -70,6 +70,7 @@ predict.vbgamlss <- function(object,
                              terms = NULL,
                              what = NULL,
                              future_plan_strategy = "future.mirai::mirai_cluster",
+                             chunk_max_mb = 1024,
                              ...){
 
   if (missing(object)) { stop("vbgamlss object is missing")}
@@ -88,7 +89,7 @@ predict.vbgamlss <- function(object,
   fname <- familyobj$family
 
   # compute chunk size
-  Nchunks <- estimate_nchunks(object)
+  Nchunks <- estimate_nchunks(object, chunk_max_Mb=chunk_max_mb)
 
   # predict setup
   if (any(grepl("mirai", future_plan_strategy))) {
