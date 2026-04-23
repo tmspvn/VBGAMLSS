@@ -96,7 +96,7 @@ predict.vbgamlss <- function(object,
   } else {
     future::plan(strategy=future_plan_strategy, workers=num_cores)
   }
-  options(future.globals.maxSize=10*1024^3) # 10 GB max per prediction
+  options(future.globals.maxSize=40*1024^3) # 10 GB max per prediction
 
   # get blas omp values
   master_blas <- RhpcBLASctl::blas_get_num_procs()
