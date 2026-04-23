@@ -69,6 +69,7 @@ predict.vbgamlss <- function(object,
                              afold=NULL,
                              terms = NULL,
                              what = NULL,
+                             future_plan_strategy = "future.mirai::mirai_cluster",
                              ...){
 
   if (missing(object)) { stop("vbgamlss object is missing")}
@@ -97,8 +98,16 @@ predict.vbgamlss <- function(object,
   Nchunks <- estimate_nchunks(object)
 
   # predict setup
-  future::plan(strategy="future::cluster", workers=num_cores)
+  if (any(grepl("mirai", future_plan_strategy))) {
+    mirai::daemons(num_cores)
+    future::plan(strategy=future_plan_strategy)
+  } else {
+    future::plan(strategy=future_plan_strategy, workers=num_cores)
+  }
   options(future.globals.maxSize=10*1024^3) # 10 GB max per prediction
+  # get blas omp values?
+  master_blas <- RhpcBLASctl::blas_get_num_procs()
+  master_omp  <- RhpcBLASctl::omp_get_max_threads()
 
   # split indices to match Core.R chunking
   chunked_indices <- as.list(itertools::isplitIndices(length(object), chunks=Nchunks))
@@ -117,6 +126,12 @@ predict.vbgamlss <- function(object,
 
     # parallel call using future_lapply
     subpr <- future.apply::future_lapply(seq_along(idx_chunk), function(k) {
+
+      # WORKER THREAD CONTROL
+      if (RhpcBLASctl::blas_get_num_procs() > 1L)
+        {RhpcBLASctl::blas_set_num_threads(1L)}
+      if (RhpcBLASctl::omp_get_num_procs() > 1L)
+        {RhpcBLASctl::omp_set_num_threads(1L)}
 
       # Grab the raw bytes for this specific worker
       raw_data <- chunk_raw_bytes[[k]]
@@ -179,6 +194,13 @@ predict.vbgamlss <- function(object,
     # Put the chunk results into the pre-allocated list
     predictions[idx_chunk] <- subpr
     gc(verbose = F)
+
+    # Reverse blas and openmp threads control, probably useless
+    if (RhpcBLASctl::blas_get_num_procs() != master_blas)
+    {RhpcBLASctl::blas_set_num_threads(master_blas)}
+    if (RhpcBLASctl::omp_get_num_procs() != master_omp)
+    {RhpcBLASctl::omp_set_num_threads(master_omp)}
+
   }
 
   gc(verbose = FALSE)
