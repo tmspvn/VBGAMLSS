@@ -43,8 +43,6 @@ load_model <- function(filepath) {
 
 
 
-
-# ------------------------------------------------------------------------------
 #' Predict method for vbgamlss objects
 #'
 #' @param object vbgamlss object to make predictions from.
@@ -107,80 +105,59 @@ predict.vbgamlss <- function(object,
   # split indices to match Core.R chunking
   chunked_indices <- as.list(itertools::isplitIndices(length(object), chunks=Nchunks))
 
-  # Pre-allocate the predictions list
-  predictions <- vector("list", length(object))
+  # 1. PRE-EXTRACT CHUNKS ON MASTER
+  # Creates a list of chunks, where each chunk is a list of raw bytes
+  cat("Extracting data chunks...\n")
+  chunk_list <- lapply(chunked_indices, function(idx_chunk) {
+    lapply(idx_chunk, function(idx) .subset2(object, idx))
+  })
 
-  # chunks loop
-  for (i in seq_along(chunked_indices)){
+  cat(paste0("Predicting across ", Nchunks, " chunks...\n"))
+
+  # 2. PARALLELIZE ACROSS CHUNKS (Not voxels)
+  chunk_predictions <- future.apply::future_lapply(seq_along(chunk_list), function(i) {
+
+    # WORKER THREAD CONTROL
+    if (RhpcBLASctl::blas_get_num_procs() > 1L) {RhpcBLASctl::blas_set_num_threads(1L)}
+    if (RhpcBLASctl::omp_get_num_procs() > 1L)  {RhpcBLASctl::omp_set_num_threads(1L)}
+
+    raw_chunk <- chunk_list[[i]]
     idx_chunk <- chunked_indices[[i]]
-    cat(paste0("Chunk: ", i, "/", Nchunks, " (Predicting)\n"))
 
-    # 1. PREPROCESSING OUTSIDE WORKERS (Matching vbgamlss dispatch logic)
+    # Pre-subset segmentation for this chunk ONLY
+    chunk_seg <- NULL
     if (!is.null(segmentation)) {
-      voxelseg_chunked <- segmentation[, idx_chunk, drop = FALSE]
+      chunk_seg <- segmentation[, idx_chunk, drop = FALSE]
     }
 
-    prep_func <- function(k) {
-      true_idx <- idx_chunk[k]
-      vxl_newdata <- newdata
+    # 3. SEQUENTIAL PROCESSING WITHIN THE WORKER
+    chunk_res <- lapply(seq_along(raw_chunk), function(k) {
 
-      if (!is.null(segmentation)) {
-        vxl_newdata$tissue <- voxelseg_chunked[, k]
-        if (!is.null(segmentation_target)) {
-          vxl_newdata <- vxl_newdata[vxl_newdata$tissue == segmentation_target, , drop = FALSE]
-        }
-      }
+      raw_data <- raw_chunk[[k]]
+      if (is.null(raw_data)) return(NA)
 
-      list(
-        raw_data = .subset2(object, true_idx),
-        newdata  = vxl_newdata
-      )
-    }
+      vxlgamlss <- qs2::qs_deserialize(raw_data)
 
-    prepared_voxel_data <- lapply(seq_along(idx_chunk), prep_func)
-
-    # Clean up to free memory before parallel execution
-    if (!is.null(segmentation)) rm(voxelseg_chunked)
-    gc(verbose = FALSE)
-
-
-    # 2. PARALLEL EXECUTION
-    subpr <- future.apply::future_lapply(prepared_voxel_data, function(vxl_item) {
-
-      # WORKER THREAD CONTROL
-      if (RhpcBLASctl::blas_get_num_procs() > 1L)
-      {RhpcBLASctl::blas_set_num_threads(1L)}
-      if (RhpcBLASctl::omp_get_num_procs() > 1L)
-      {RhpcBLASctl::omp_set_num_threads(1L)}
-
-      # Explicitly deserialize inside the worker
-      if (is.null(vxl_item$raw_data)) return(NA)
-      vxlgamlss <- qs2::qs_deserialize(vxl_item$raw_data)
-
-      # process only if properly fitted (no error flag)
+      # process only if properly fitted
       if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
 
-        # recon family object
         vxlgamlss$family <- familyobj
 
-        # predict using the pre-assembled voxel-specific newdata
-        pred_res <- tryCatch({
-          predict(vxlgamlss,
-                  newdata = vxl_item$newdata,
-                  type = ptype,
-                  terms = terms,
-                  what = what,
-                  ...)
-        }, error = function(e) {
-          structure(e$message, class = "try-error")
-        })
-
-        # If prediction failed, return NA
-        if (inherits(pred_res, "try-error")) {
-          return(NA)
+        # Subsetting happens safely inside the sequential loop
+        vxl_newdata <- newdata
+        if (!is.null(chunk_seg)) {
+          vxl_newdata$tissue <- chunk_seg[, k]
+          if (!is.null(segmentation_target)) {
+            vxl_newdata <- vxl_newdata[vxl_newdata$tissue == segmentation_target, , drop = FALSE]
+          }
         }
 
-        # Structure the list correctly
+        pred_res <- tryCatch({
+          predict(vxlgamlss, newdata = vxl_newdata, type = ptype, terms = terms, what = what, ...)
+        }, error = function(e) structure(e$message, class = "try-error"))
+
+        if (inherits(pred_res, "try-error")) return(NA)
+
         if (!is.null(what) && length(what) == 1) {
           l <- list()
           l[[what]] <- as.numeric(pred_res)
@@ -190,30 +167,27 @@ predict.vbgamlss <- function(object,
 
         l$family <- fname
         l$vxl <- vxlgamlss$vxl
-
         return(l)
 
       } else {
         return(NA)
       }
-    }, future.seed = TRUE)
+    })
 
-    # Put chunk results into the pre-allocated list
-    predictions[idx_chunk] <- subpr
-    gc(verbose = FALSE)
+    return(chunk_res)
+  }, future.seed = TRUE)
 
-    # Reverse blas and openmp threads control
-    if (RhpcBLASctl::blas_get_num_procs() != master_blas)
-    {RhpcBLASctl::blas_set_num_threads(master_blas)}
-    if (RhpcBLASctl::omp_get_num_procs() != master_omp)
-    {RhpcBLASctl::omp_set_num_threads(master_omp)}
+  # Reverse blas and openmp threads control (Master session)
+  if (RhpcBLASctl::blas_get_num_procs() != master_blas) {RhpcBLASctl::blas_set_num_threads(master_blas)}
+  if (RhpcBLASctl::omp_get_num_procs() != master_omp)   {RhpcBLASctl::omp_set_num_threads(master_omp)}
 
-  }
+  # 4. FLATTEN RESULTS
+  # unlist(..., recursive = FALSE) converts the list of chunks back into a single list of voxels
+  predictions <- unlist(chunk_predictions, recursive = FALSE)
 
   gc(verbose = FALSE)
   return(structure(predictions, class = "vbgamlss.predictions"))
 }
-
 
 
 
@@ -488,101 +462,176 @@ james_stein <- function(object,
                              # DEPRECATED #
 ############################## ========== ######################################
 
-# predict.vbgamlss <- function(object,
-#                              newdata=NULL,
-#                              num_cores=NULL,
-#                              ptype='parameter',
-#                              segmentation=NULL,
-#                              segmentation_target=NULL,
-#                              afold=NULL,
-#                              terms = NULL,
-#                              what = NULL,
-#                              ...){
-#
-#   if (missing(object)) { stop("vbgamlss object is missing")}
-#   if (is.null(num_cores)) {num_cores <- future::availableCores()}
-#
-#   # check segmentation
-#   if (!is.null(segmentation)){
-#     if (!is.data.frame(segmentation) && !is.matrix(segmentation)) {
-#       stop("Error: segmentation must be a data.frame or matrix")
-#     }
-#   }
-#
-#   # subset the dataframe if the input is a fold from CV
-#   if (!is.null(afold)){
-#     if (!is.logical(afold) && !is.integer(afold)) {
-#       stop("Error: afold must be either logical or integer vector.")
-#     }
-#     if (!is.null(segmentation)) segmentation <- segmentation[afold, , drop=FALSE]
-#   }
-#
-#   fname <- as.character(object[[1]]$family)
-#   familyobj <- gamlss2:::complete_family(get(fname))
-#
-#   # compute chunk size
-#   Nchunks <- estimate_nchunks(object)
-#
-#   # predict setup
-#   future::plan(strategy="future::cluster", workers=num_cores)
-#
-#   # split indices to match Core.R chunking
-#   chunked_indices <- as.list(itertools::isplitIndices(length(object), chunks=Nchunks))
-#   predictions <- list()
-#
-#   # chunks loop
-#   for (i in seq_along(chunked_indices)){
-#     idx_chunk <- chunked_indices[[i]]
-#     cat(paste0("Chunk: ", i, "/", Nchunks, " (Predicting)"), fill=TRUE)
-#
-#     # parallel call using future.apply to match Core.R framework
-#     subpr <- future.apply::future_lapply(idx_chunk, function(idx) {
-#
-#       vxlgamlss <- object[[idx]]
-#
-#       # process only if properly fitted (no error flag)
-#       if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
-#
-#         # recon family object (Core.R strips it to string to save memory)
-#         vxlgamlss$family <- familyobj
-#
-#         # if multi tissue add
-#         if (!is.null(segmentation)){
-#           newdata$tissue <- segmentation[, idx]
-#           if (!is.null(segmentation_target)){
-#             newdata <- newdata[newdata$tissue == segmentation_target, , drop=FALSE]
-#           }}
-#
-#         # predict
-#         pred_res <- predict(vxlgamlss,
-#                             newdata = newdata,
-#                             type = ptype,
-#                             terms = terms,
-#                             what = what,
-#                             ...)
-#
-#         # Structure the list correctly
-#         if (!is.null(what) && length(what) == 1) {
-#           l <- list()
-#           l[[what]] <- as.numeric(pred_res)
-#         } else {
-#           l <- as.list(pred_res)
-#         }
-#
-#         l$family <- fname
-#         l$vxl <- vxlgamlss$vxl
-#
-#         return(l)
-#
-#       } else {
-#         return(NA)
-#       }
-#     }, future.seed = TRUE)
-#
-#     predictions <- c(predictions, subpr)
-#   }
-#
-#   gc()
-#   return(structure(predictions, class = "vbgamlss.predictions"))
-# }
-#
+#' # ------------------------------------------------------------------------------
+#' #' Predict method for vbgamlss objects
+#' #'
+#' #' @param object vbgamlss object to make predictions from.
+#' #' @param newdata New data to use for predictions. Must be data.frame
+#' #' @param num_cores Number of CPU cores to use for parallel processing.
+#' #'   Defaults to one less than the total available cores if not provided.
+#' #' @param ptype Type of prediction to make: "parameter", "link", "response", "terms". Defaults to "parameter".
+#' #' @param segmentation Optional image/path with region labels.
+#' #' @param segmentation_target Optional. Integer to evaluate (eg 1).
+#' #' @param afold Optional. Integer, fold index when predicting CV folds (for internal use).
+#' #' @param ... Additional arguments passed to the predict.gamlss2 function.
+#' #' @return A structure containing predictions.
+#' #' @import future.apply
+#' #' @import future
+#' #' @export
+#' predict.vbgamlss <- function(object,
+#'                              newdata=NULL,
+#'                              num_cores=NULL,
+#'                              ptype='parameter',
+#'                              segmentation=NULL,
+#'                              segmentation_target=NULL,
+#'                              afold=NULL,
+#'                              terms = NULL,
+#'                              what = NULL,
+#'                              future_plan_strategy = "future.mirai::mirai_cluster",
+#'                              chunk_max_mb = 1024,
+#'                              ...){
+#'
+#'   if (missing(object)) { stop("vbgamlss object is missing")}
+#'   if (is.null(num_cores)) {num_cores <- future::availableCores()}
+#'
+#'   # check segmentation
+#'   if (!is.null(segmentation)){
+#'     if (!is.data.frame(segmentation) && !is.matrix(segmentation)) {
+#'       stop("Error: segmentation must be a data.frame or matrix")
+#'     }
+#'     segmentation <- as.matrix(segmentation)
+#'   }
+#'
+#'   # record fam obj if missing
+#'   familyobj <- restore_family(object[[1]])$family
+#'   fname <- familyobj$family
+#'
+#'   # compute chunk size
+#'   Nchunks <- estimate_nchunks(object, chunk_max_Mb=chunk_max_mb)
+#'
+#'   # predict setup
+#'   if (any(grepl("mirai", future_plan_strategy))) {
+#'     mirai::daemons(num_cores)
+#'     future::plan(strategy=future_plan_strategy)
+#'   } else {
+#'     future::plan(strategy=future_plan_strategy, workers=num_cores)
+#'   }
+#'   options(future.globals.maxSize=10*1024^3) # 10 GB max per prediction
+#'
+#'   # get blas omp values
+#'   master_blas <- RhpcBLASctl::blas_get_num_procs()
+#'   master_omp  <- RhpcBLASctl::omp_get_max_threads()
+#'
+#'   # split indices to match Core.R chunking
+#'   chunked_indices <- as.list(itertools::isplitIndices(length(object), chunks=Nchunks))
+#'
+#'   # Pre-allocate the predictions list
+#'   predictions <- vector("list", length(object))
+#'
+#'   # chunks loop
+#'   for (i in seq_along(chunked_indices)){
+#'     idx_chunk <- chunked_indices[[i]]
+#'     cat(paste0("Chunk: ", i, "/", Nchunks, " (Predicting)\n"))
+#'
+#'     # 1. PREPROCESSING OUTSIDE WORKERS (Matching vbgamlss dispatch logic)
+#'     if (!is.null(segmentation)) {
+#'       voxelseg_chunked <- segmentation[, idx_chunk, drop = FALSE]
+#'     }
+#'
+#'     prep_func <- function(k) {
+#'       true_idx <- idx_chunk[k]
+#'       vxl_newdata <- newdata
+#'
+#'       if (!is.null(segmentation)) {
+#'         vxl_newdata$tissue <- voxelseg_chunked[, k]
+#'         if (!is.null(segmentation_target)) {
+#'           vxl_newdata <- vxl_newdata[vxl_newdata$tissue == segmentation_target, , drop = FALSE]
+#'         }
+#'       }
+#'
+#'       list(
+#'         raw_data = .subset2(object, true_idx),
+#'         newdata  = vxl_newdata
+#'       )
+#'     }
+#'
+#'     prepared_voxel_data <- lapply(seq_along(idx_chunk), prep_func)
+#'
+#'     # Clean up to free memory before parallel execution
+#'     if (!is.null(segmentation)) rm(voxelseg_chunked)
+#'     gc(verbose = FALSE)
+#'
+#'
+#'     # 2. PARALLEL EXECUTION
+#'     subpr <- future.apply::future_lapply(prepared_voxel_data, function(vxl_item) {
+#'
+#'       # WORKER THREAD CONTROL
+#'       if (RhpcBLASctl::blas_get_num_procs() > 1L)
+#'       {RhpcBLASctl::blas_set_num_threads(1L)}
+#'       if (RhpcBLASctl::omp_get_num_procs() > 1L)
+#'       {RhpcBLASctl::omp_set_num_threads(1L)}
+#'
+#'       # Explicitly deserialize inside the worker
+#'       if (is.null(vxl_item$raw_data)) return(NA)
+#'       vxlgamlss <- qs2::qs_deserialize(vxl_item$raw_data)
+#'
+#'       # process only if properly fitted (no error flag)
+#'       if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
+#'
+#'         # recon family object
+#'         vxlgamlss$family <- familyobj
+#'
+#'         # predict using the pre-assembled voxel-specific newdata
+#'         pred_res <- tryCatch({
+#'           predict(vxlgamlss,
+#'                   newdata = vxl_item$newdata,
+#'                   type = ptype,
+#'                   terms = terms,
+#'                   what = what,
+#'                   ...)
+#'         }, error = function(e) {
+#'           structure(e$message, class = "try-error")
+#'         })
+#'
+#'         # If prediction failed, return NA
+#'         if (inherits(pred_res, "try-error")) {
+#'           return(NA)
+#'         }
+#'
+#'         # Structure the list correctly
+#'         if (!is.null(what) && length(what) == 1) {
+#'           l <- list()
+#'           l[[what]] <- as.numeric(pred_res)
+#'         } else {
+#'           l <- as.list(pred_res)
+#'         }
+#'
+#'         l$family <- fname
+#'         l$vxl <- vxlgamlss$vxl
+#'
+#'         return(l)
+#'
+#'       } else {
+#'         return(NA)
+#'       }
+#'     }, future.seed = TRUE)
+#'
+#'     # Put chunk results into the pre-allocated list
+#'     predictions[idx_chunk] <- subpr
+#'     gc(verbose = FALSE)
+#'
+#'     # Reverse blas and openmp threads control
+#'     if (RhpcBLASctl::blas_get_num_procs() != master_blas)
+#'     {RhpcBLASctl::blas_set_num_threads(master_blas)}
+#'     if (RhpcBLASctl::omp_get_num_procs() != master_omp)
+#'     {RhpcBLASctl::omp_set_num_threads(master_omp)}
+#'
+#'   }
+#'
+#'   gc(verbose = FALSE)
+#'   return(structure(predictions, class = "vbgamlss.predictions"))
+#' }
+#'
+#'
+#'
+
