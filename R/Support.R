@@ -43,20 +43,36 @@ load_model <- function(filepath) {
 
 
 
+
 #' Predict method for vbgamlss objects
 #'
 #' @param object vbgamlss object to make predictions from.
-#' @param newdata New data to use for predictions. Must be data.frame
+#' @param newdata New data to use for predictions. Must be data.frame.
 #' @param num_cores Number of CPU cores to use for parallel processing.
-#'   Defaults to one less than the total available cores if not provided.
-#' @param ptype Type of prediction to make: "parameter", "link", "response", "terms". Defaults to "parameter".
-#' @param segmentation Optional image/path with region labels.
-#' @param segmentation_target Optional. Integer to evaluate (eg 1).
-#' @param afold Optional. Integer, fold index when predicting CV folds (for internal use).
-#' @param ... Additional arguments passed to the predict.gamlss2 function.
-#' @return A structure containing predictions.
+#'   Defaults to available cores if not provided.
+#' @param ptype Type of prediction to make: "parameter", "link", "response", "terms".
+#'   Defaults to "parameter".
+#' @param segmentation Optional data.frame or matrix with region labels (e.g., tissue types)
+#'   mapping to the voxels in the object.
+#' @param segmentation_target Optional integer. If provided, the prediction is only
+#'   performed for voxels where the segmentation matches this value.
+#' @param terms Optional character vector. What terms to include in prediction. See gamlss2 doc.
+#' @param what Optional character. Specifies which distribution parameter to predict
+#'   (e.g., "mu", "sigma").
+#' @param future_plan_strategy Character. The parallel back-end strategy to use.
+#'   Defaults to "future.mirai::mirai_cluster".
+#' @param chunk_max_mb Integer. Maximum size in MB for each data chunk sent to workers.
+#'   Defaults to 1024.
+#' @param ... Additional arguments passed to the underlying predict.gamlss2 function.
+#'
+#' @return A structure of class "vbgamlss.predictions" containing a list of
+#'   prediction results for each voxel.
+#'
 #' @import future.apply
 #' @import future
+#' @importFrom qs2 qs_save qs_read qs_deserialize
+#' @importFrom RhpcBLASctl blas_get_num_procs blas_set_num_threads omp_get_max_threads omp_set_num_threads
+#' @importFrom itertools isplitIndices
 #' @export
 predict.vbgamlss <- function(object,
                              newdata=NULL,
@@ -64,59 +80,48 @@ predict.vbgamlss <- function(object,
                              ptype='parameter',
                              segmentation=NULL,
                              segmentation_target=NULL,
-                             afold=NULL,
                              terms = NULL,
                              what = NULL,
                              future_plan_strategy = "future.mirai::mirai_cluster",
                              chunk_max_mb = 1024,
-                             logdir = NULL,
-                             ...){
+                             ...) {
 
-  cat("[DEBUG 1] Function started. Checking inputs...\n")
-  if (missing(object)) { stop("vbgamlss object is missing")}
-  if (is.null(num_cores)) {num_cores <- future::availableCores()}
+  # Checks
+  if (missing(object)) stop("vbgamlss object is missing")
+  if (is.null(num_cores)) num_cores <- future::availableCores()
 
-  if (!is.null(segmentation)){
+  if (!is.null(segmentation)) {
     if (!is.data.frame(segmentation) && !is.matrix(segmentation)) {
       stop("Error: segmentation must be a data.frame or matrix")
     }
     segmentation <- as.matrix(segmentation)
   }
 
-  cat("[DEBUG 2] Extracting family object...\n")
+  # Extract family object for workers
   familyobj <- restore_family(object[[1]])$family
   fname <- familyobj$family
 
-  cat("[DEBUG 3] Estimating chunk size...\n")
-  Nchunks <- estimate_nchunks(object, chunk_max_Mb=chunk_max_mb)
-  cat(paste0("[DEBUG 3b] Estimated Nchunks: ", Nchunks, "\n"))
-
-  cat("[DEBUG 4] Setting up future plan...\n")
+  # Prepare for parallelization
   if (any(grepl("mirai", future_plan_strategy))) {
     mirai::daemons(num_cores)
     future::plan(strategy=future_plan_strategy)
   } else {
     future::plan(strategy=future_plan_strategy, workers=num_cores)
   }
-  options(future.globals.maxSize=50*1024^3)
+  options(future.globals.maxSize=10*1024^3) # max 10GB otherwise it crashes
 
-  master_blas <- RhpcBLASctl::blas_get_num_procs()
-  master_omp  <- RhpcBLASctl::omp_get_max_threads()
+  # Chunk
+  Nchunks <- estimate_nchunks(object, chunk_max_Mb=chunk_max_mb)
+  chunked_indices <- as.list(itertools::isplitIndices( length(object), chunks=Nchunks))
 
-  cat("[DEBUG 5] Splitting indices...\n")
-  obj_length <- length(object)
-  chunked_indices <- as.list(itertools::isplitIndices(obj_length, chunks=Nchunks))
-
-  cat("[DEBUG 6] Preparing data chunks (caching to disk)...\n")
-  run_id <- paste0(sample(letters, 8, replace=TRUE), collapse="")
-
+  # Cache chunk for parallel processing
   prepared_chunks <- lapply(seq_along(chunked_indices), function(i) {
     idx_chunk <- chunked_indices[[i]]
-
     raw_bytes_list <- lapply(idx_chunk, function(idx) .subset2(object, idx))
 
-    # Generate globally unique temp file
-    chunk_path <- tempfile(pattern = sprintf("vbgamlss_%s_chunk_%d_", run_id, i),
+    # Generate unique temp file
+    chunk_path <- tempfile(pattern = sprintf("vbgamlss_%s_predchunk",
+                                             rand_names(1)),
                            tmpdir = tempdir(),
                            fileext = ".qs")
     qs2::qs_save(raw_bytes_list, file = chunk_path)
@@ -127,97 +132,81 @@ predict.vbgamlss <- function(object,
     )
   })
 
-  # GUARANTEED CLEANUP: This triggers when the function exits (success or error)
+  # Cleanup \tmp on exit
   on.exit({
-    cat("[DEBUG] Running on.exit cleanup: removing chunk files...\n")
     unlink(sapply(prepared_chunks, `[[`, "file_path"))
   }, add = TRUE)
 
-  cat("[DEBUG 7] Cleaning up master environment...\n")
+  # remove large objects that are no longer needed
+  rm(object)
   if (exists("segmentation")) rm(segmentation)
   gc(verbose = FALSE)
 
-  cat(paste0("[DEBUG 8] Launching future_lapply across ", Nchunks, " chunks...\n"))
 
+  # Actual parallel call
   chunk_predictions <- future.apply::future_lapply(prepared_chunks, function(chunk) {
 
-    withCallingHandlers({
+    # avoid competing workers
+    if (RhpcBLASctl::blas_get_num_procs() > 1L) RhpcBLASctl::blas_set_num_threads(1L)
+    if (RhpcBLASctl::omp_get_num_procs() > 1L)  RhpcBLASctl::omp_set_num_threads(1L)
 
-      if (RhpcBLASctl::blas_get_num_procs() > 1L) {RhpcBLASctl::blas_set_num_threads(1L)}
-      if (RhpcBLASctl::omp_get_num_procs() > 1L)  {RhpcBLASctl::omp_set_num_threads(1L)}
+    # Load one temporary chunk
+    chunk_raw_bytes <- qs2::qs_read(chunk$file_path)
 
-      # LOAD CHUNK ONCE
-      chunk_raw_bytes <- qs2::qs_read(chunk$file_path)
+    # process the chunk sequentially
+    chunk_res <- lapply(seq_along(chunk_raw_bytes), function(k) {
 
-      chunk_res <- lapply(seq_along(chunk_raw_bytes), function(k) {
+      # get single model and deserialize
+      raw_data <- chunk_raw_bytes[[k]]
+      if (is.null(raw_data)) return(NA)
+      vxlgamlss <- qs2::qs_deserialize(raw_data)
 
-        raw_data <- chunk_raw_bytes[[k]]
-        if (is.null(raw_data)) return(NA)
+      if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
 
-        vxlgamlss <- qs2::qs_deserialize(raw_data)
+        # segmentation?
+        vxlgamlss$family <- familyobj
+        vxl_newdata <- newdata
 
-        if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
-
-          vxlgamlss$family <- familyobj
-
-          vxl_newdata <- newdata
-          if (!is.null(chunk$seg_data)) {
-            vxl_newdata$tissue <- chunk$seg_data[, k]
-            if (!is.null(segmentation_target)) {
-              vxl_newdata <- vxl_newdata[vxl_newdata$tissue == segmentation_target, , drop = FALSE]
-            }
+        if (!is.null(chunk$seg_data)) {
+          vxl_newdata$tissue <- chunk$seg_data[, k]
+          if (!is.null(segmentation_target)) {
+            vxl_newdata <- vxl_newdata[vxl_newdata$tissue == segmentation_target, , drop = FALSE]
           }
+        }
 
-          pred_res <- tryCatch({
-            predict(vxlgamlss, newdata = vxl_newdata, type = ptype, terms = terms, what = what, ...)
-          }, error = function(e) structure(e$message, class = "try-error"))
+        # Actual predict call
+        pred_res <- tryCatch({
+          predict(vxlgamlss, newdata = vxl_newdata, type = ptype, terms = terms, what = what, ...)
+        }, error = function(e) structure(e$message, class = "try-error"))
 
-          if (inherits(pred_res, "try-error")) {
-            message("Prediction failed for voxel ", k, ": ", pred_res)
-            return(NA)
-          }
-
-          if (!is.null(what) && length(what) == 1) {
-            l <- list()
-            l[[what]] <- as.numeric(pred_res)
-          } else {
-            l <- as.list(pred_res)
-          }
-
-          l$family <- fname
-          l$vxl <- vxlgamlss$vxl
-          return(l)
-
-        } else {
+        if (inherits(pred_res, "try-error")) {
+          message("Prediction failed for voxel: ", pred_res)
           return(NA)
         }
-      })
 
-      return(chunk_res)
+        if (!is.null(what) && length(what) == 1) {
+          l <- list()
+          l[[what]] <- as.numeric(pred_res)
+        } else {
+          l <- as.list(pred_res)
+        }
 
-    }, error = function(e) {
-      if(!is.null(logdir)) {
-        logfile <- file.path(logdir, paste0(sample(letters, 8, replace=TRUE), collapse=""), '.vbgamlss_predict.error')
-        cat(sprintf("\n=== ERROR CAUGHT [%s] ===\n%s\n--- TRACEBACK ---\n",
-                    Sys.time(), conditionMessage(e)),
-            file = logfile, append = TRUE)
-        capture.output(print(sys.calls()), file = logfile, append = TRUE)
+        l$family <- fname
+        l$vxl <- vxlgamlss$vxl
+        return(l)
+
+      } else {
+        return(NA)
       }
     })
 
+    return(chunk_res)
+
   }, future.seed = TRUE)
 
-  cat("[DEBUG 9] future_lapply finished. Reverting thread controls...\n")
-  if (RhpcBLASctl::blas_get_num_procs() != master_blas)
-  {RhpcBLASctl::blas_set_num_threads(master_blas)}
-  if (RhpcBLASctl::omp_get_num_procs() != master_omp)
-  {RhpcBLASctl::omp_set_num_threads(master_omp)}
-
-  cat("[DEBUG 10] Flattening results...\n")
+  # Return
   predictions <- unlist(chunk_predictions, recursive = FALSE)
-
   gc(verbose = FALSE)
-  cat("[DEBUG 11] Done.\n")
   return(structure(predictions, class = "vbgamlss.predictions"))
 }
 
