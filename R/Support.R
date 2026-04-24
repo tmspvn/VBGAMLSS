@@ -69,6 +69,7 @@ predict.vbgamlss <- function(object,
                              what = NULL,
                              future_plan_strategy = "future.mirai::mirai_cluster",
                              chunk_max_mb = 1024,
+                             logdir = NULL,
                              ...){
 
   if (missing(object)) { stop("vbgamlss object is missing")}
@@ -123,60 +124,76 @@ predict.vbgamlss <- function(object,
 
   # PARALLELIZE OVER THE LIST DIRECTLY
   # By passing `prepared_chunks` as X, future splits it and sends only 1 chunk per worker.
+  # PARALLELIZE OVER THE LIST DIRECTLY
   chunk_predictions <- future.apply::future_lapply(prepared_chunks, function(chunk) {
 
-    # WORKER THREAD CONTROL
-    if (RhpcBLASctl::blas_get_num_procs() > 1L) {RhpcBLASctl::blas_set_num_threads(1L)}
-    if (RhpcBLASctl::omp_get_num_procs() > 1L)  {RhpcBLASctl::omp_set_num_threads(1L)}
+    withCallingHandlers({
 
-    # SEQUENTIAL PROCESSING WITHIN THE WORKER
-    chunk_res <- lapply(seq_along(chunk$raw_bytes), function(k) {
+      # WORKER THREAD CONTROL
+      if (RhpcBLASctl::blas_get_num_procs() > 1L) {RhpcBLASctl::blas_set_num_threads(1L)}
+      if (RhpcBLASctl::omp_get_num_procs() > 1L)  {RhpcBLASctl::omp_set_num_threads(1L)}
 
-      raw_data <- chunk$raw_bytes[[k]]
-      if (is.null(raw_data)) return(NA)
+      # SEQUENTIAL PROCESSING WITHIN THE WORKER
+      chunk_res <- lapply(seq_along(chunk$raw_bytes), function(k) {
 
-      vxlgamlss <- qs2::qs_deserialize(raw_data)
+        raw_data <- chunk$raw_bytes[[k]]
+        if (is.null(raw_data)) return(NA)
 
-      # process only if properly fitted
-      if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
+        vxlgamlss <- qs2::qs_deserialize(raw_data)
 
-        vxlgamlss$family <- familyobj
+        # process only if properly fitted
+        if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
 
-        # Subset safely inside the sequential loop
-        vxl_newdata <- newdata
-        if (!is.null(chunk$seg_data)) {
-          vxl_newdata$tissue <- chunk$seg_data[, k]
-          if (!is.null(segmentation_target)) {
-            vxl_newdata <- vxl_newdata[vxl_newdata$tissue == segmentation_target, , drop = FALSE]
+          vxlgamlss$family <- familyobj
+
+          # Subset safely inside the sequential loop
+          vxl_newdata <- newdata
+          if (!is.null(chunk$seg_data)) {
+            vxl_newdata$tissue <- chunk$seg_data[, k]
+            if (!is.null(segmentation_target)) {
+              vxl_newdata <- vxl_newdata[vxl_newdata$tissue == segmentation_target, , drop = FALSE]
+            }
           }
-        }
 
-        pred_res <- tryCatch({
-          predict(vxlgamlss, newdata = vxl_newdata, type = ptype, terms = terms, what = what, ...)
-        }, error = function(e) structure(e$message, class = "try-error"))
+          pred_res <- tryCatch({
+            predict(vxlgamlss, newdata = vxl_newdata, type = ptype, terms = terms, what = what, ...)
+          }, error = function(e) structure(e$message, class = "try-error"))
 
-        if (inherits(pred_res, "try-error")) {
-          message("Prediction failed for voxel ", k, ": ", pred_res)
+          if (inherits(pred_res, "try-error")) {
+            message("Prediction failed for voxel ", k, ": ", pred_res)
+            return(NA)
+          }
+
+          if (!is.null(what) && length(what) == 1) {
+            l <- list()
+            l[[what]] <- as.numeric(pred_res)
+          } else {
+            l <- as.list(pred_res)
+          }
+
+          l$family <- fname
+          l$vxl <- vxlgamlss$vxl
+          return(l)
+
+        } else {
           return(NA)
         }
+      })
 
-        if (!is.null(what) && length(what) == 1) {
-          l <- list()
-          l[[what]] <- as.numeric(pred_res)
-        } else {
-          l <- as.list(pred_res)
-        }
+      return(chunk_res)
 
-        l$family <- fname
-        l$vxl <- vxlgamlss$vxl
-        return(l)
+    }, error = function(e) {
+      # HARDCODED PATH FOR TRACEBACK
+      cat(sprintf("\n=== ERROR CAUGHT [%s] ===\n%s\n--- TRACEBACK ---\n",
+                  Sys.time(), conditionMessage(e)),
+          file = log_path, append = TRUE)
 
-      } else {
-        return(NA)
-      }
+      capture.output(print(sys.calls()),
+                     file = file.path(logdir,
+                                      paste0(rand_names(1), '.vbgamlss_predict.error')),
+                     append = TRUE)
     })
 
-    return(chunk_res)
   }, future.seed = TRUE)
 
   # Reverse blas and openmp threads control (Master session)
