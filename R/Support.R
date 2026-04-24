@@ -72,6 +72,7 @@ predict.vbgamlss <- function(object,
                              logdir = NULL,
                              ...){
 
+  cat("[DEBUG 1] Function started. Checking inputs...\n")
   if (missing(object)) { stop("vbgamlss object is missing")}
   if (is.null(num_cores)) {num_cores <- future::availableCores()}
 
@@ -83,48 +84,48 @@ predict.vbgamlss <- function(object,
     segmentation <- as.matrix(segmentation)
   }
 
-  # record fam obj if missing
+  cat("[DEBUG 2] Extracting family object...\n")
   familyobj <- restore_family(object[[1]])$family
   fname <- familyobj$family
 
-  # compute chunk size
+  cat("[DEBUG 3] Estimating chunk size...\n")
   Nchunks <- estimate_nchunks(object, chunk_max_Mb=chunk_max_mb)
+  cat(paste0("[DEBUG 3b] Estimated Nchunks: ", Nchunks, "\n"))
 
-  # predict setup
+  cat("[DEBUG 4] Setting up future plan...\n")
   if (any(grepl("mirai", future_plan_strategy))) {
     mirai::daemons(num_cores)
     future::plan(strategy=future_plan_strategy)
   } else {
     future::plan(strategy=future_plan_strategy, workers=num_cores)
   }
-  options(future.globals.maxSize=50*1024^3) # 10 GB max per prediction
+  options(future.globals.maxSize=50*1024^3)
 
-  # get blas omp values
   master_blas <- RhpcBLASctl::blas_get_num_procs()
   master_omp  <- RhpcBLASctl::omp_get_max_threads()
 
-  # split indices to match Core.R chunking
-  chunked_indices <- as.list(itertools::isplitIndices(length(object), chunks=Nchunks))
+  cat("[DEBUG 5] Splitting indices...\n")
+  obj_length <- length(object)
+  cat(paste0("[DEBUG 5b] Length of input object: ", obj_length, "\n"))
+  chunked_indices <- as.list(itertools::isplitIndices(obj_length, chunks=Nchunks))
 
-  # PRE-EXTRACT CHUNKS AND BUNDLE DATA
-  cat("Preparing data chunks\n")
-  prepared_chunks <- lapply(chunked_indices, function(idx_chunk) {
+  cat("[DEBUG 6] Preparing data chunks (extracting subset2)...\n")
+  prepared_chunks <- lapply(seq_along(chunked_indices), function(i) {
+    idx_chunk <- chunked_indices[[i]]
+    # Optional deep debug: cat(sprintf("  -> Bundling chunk %d with %d items\n", i, length(idx_chunk)))
     list(
       raw_bytes = lapply(idx_chunk, function(idx) .subset2(object, idx)),
       seg_data  = if (!is.null(segmentation)) segmentation[, idx_chunk, drop = FALSE] else NULL
     )
   })
 
-  # NUKE THE MASTER OBJECTS TO PREVENT MEMORY LEAKS TO WORKERS
-  rm(object)
+  cat("[DEBUG 7] Cleaning up master environment (gc)...\n")
+  # rm(object)
   if (exists("segmentation")) rm(segmentation)
   gc(verbose = FALSE)
 
-  cat(paste0("Predicting across ", Nchunks, " chunks...\n"))
+  cat(paste0("[DEBUG 8] Launching future_lapply across ", Nchunks, " chunks...\n"))
 
-  # PARALLELIZE OVER THE LIST DIRECTLY
-  # By passing `prepared_chunks` as X, future splits it and sends only 1 chunk per worker.
-  # PARALLELIZE OVER THE LIST DIRECTLY
   chunk_predictions <- future.apply::future_lapply(prepared_chunks, function(chunk) {
 
     withCallingHandlers({
@@ -146,7 +147,6 @@ predict.vbgamlss <- function(object,
 
           vxlgamlss$family <- familyobj
 
-          # Subset safely inside the sequential loop
           vxl_newdata <- newdata
           if (!is.null(chunk$seg_data)) {
             vxl_newdata$tissue <- chunk$seg_data[, k]
@@ -183,31 +183,37 @@ predict.vbgamlss <- function(object,
       return(chunk_res)
 
     }, error = function(e) {
-      # HARDCODED PATH FOR TRACEBACK
-      cat(sprintf("\n=== ERROR CAUGHT [%s] ===\n%s\n--- TRACEBACK ---\n",
-                  Sys.time(), conditionMessage(e)),
-          file = log_path, append = TRUE)
+      if(!is.null(logdir)) {
+        logfile <- file.path(logdir, paste0(sample(letters, 8, replace=TRUE), collapse=""), '.vbgamlss_predict.error')
+        cat(sprintf("\n=== ERROR CAUGHT [%s] ===\n%s\n--- TRACEBACK ---\n",
+                    Sys.time(), conditionMessage(e)),
+            file = logfile, append = TRUE)
 
-      capture.output(print(sys.calls()),
-                     file = file.path(logdir,
-                                      paste0(rand_names(1), '.vbgamlss_predict.error')),
-                     append = TRUE)
+        capture.output(print(sys.calls()),
+                       file = logfile,
+                       append = TRUE)
+      }
     })
 
   }, future.seed = TRUE)
 
-  # Reverse blas and openmp threads control (Master session)
+  cat("[DEBUG 9] future_lapply finished. Reverting thread controls...\n")
   if (RhpcBLASctl::blas_get_num_procs() != master_blas)
-    {RhpcBLASctl::blas_set_num_threads(master_blas)}
+  {RhpcBLASctl::blas_set_num_threads(master_blas)}
   if (RhpcBLASctl::omp_get_num_procs() != master_omp)
-    {RhpcBLASctl::omp_set_num_threads(master_omp)}
+  {RhpcBLASctl::omp_set_num_threads(master_omp)}
 
-  # 4. FLATTEN RESULTS
+  cat("[DEBUG 10] Flattening results...\n")
   predictions <- unlist(chunk_predictions, recursive = FALSE)
 
   gc(verbose = FALSE)
+  cat("[DEBUG 11] Done.\n")
   return(structure(predictions, class = "vbgamlss.predictions"))
 }
+
+
+
+
 
 
 
