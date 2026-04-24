@@ -76,7 +76,6 @@ predict.vbgamlss <- function(object,
   if (missing(object)) { stop("vbgamlss object is missing")}
   if (is.null(num_cores)) {num_cores <- future::availableCores()}
 
-  # check segmentation
   if (!is.null(segmentation)){
     if (!is.data.frame(segmentation) && !is.matrix(segmentation)) {
       stop("Error: segmentation must be a data.frame or matrix")
@@ -106,21 +105,35 @@ predict.vbgamlss <- function(object,
 
   cat("[DEBUG 5] Splitting indices...\n")
   obj_length <- length(object)
-  cat(paste0("[DEBUG 5b] Length of input object: ", obj_length, "\n"))
   chunked_indices <- as.list(itertools::isplitIndices(obj_length, chunks=Nchunks))
 
-  cat("[DEBUG 6] Preparing data chunks (extracting subset2)...\n")
+  cat("[DEBUG 6] Preparing data chunks (caching to disk)...\n")
+  run_id <- paste0(sample(letters, 8, replace=TRUE), collapse="")
+
   prepared_chunks <- lapply(seq_along(chunked_indices), function(i) {
     idx_chunk <- chunked_indices[[i]]
-    # Optional deep debug: cat(sprintf("  -> Bundling chunk %d with %d items\n", i, length(idx_chunk)))
+
+    raw_bytes_list <- lapply(idx_chunk, function(idx) .subset2(object, idx))
+
+    # Generate globally unique temp file
+    chunk_path <- tempfile(pattern = sprintf("vbgamlss_%s_chunk_%d_", run_id, i),
+                           tmpdir = tempdir(),
+                           fileext = ".qs")
+    qs2::qs_save(raw_bytes_list, file = chunk_path)
+
     list(
-      raw_bytes = lapply(idx_chunk, function(idx) .subset2(object, idx)),
+      file_path = chunk_path,
       seg_data  = if (!is.null(segmentation)) segmentation[, idx_chunk, drop = FALSE] else NULL
     )
   })
 
-  cat("[DEBUG 7] Cleaning up master environment (gc)...\n")
-  # rm(object)
+  # GUARANTEED CLEANUP: This triggers when the function exits (success or error)
+  on.exit({
+    cat("[DEBUG] Running on.exit cleanup: removing chunk files...\n")
+    unlink(sapply(prepared_chunks, `[[`, "file_path"))
+  }, add = TRUE)
+
+  cat("[DEBUG 7] Cleaning up master environment...\n")
   if (exists("segmentation")) rm(segmentation)
   gc(verbose = FALSE)
 
@@ -130,19 +143,19 @@ predict.vbgamlss <- function(object,
 
     withCallingHandlers({
 
-      # WORKER THREAD CONTROL
       if (RhpcBLASctl::blas_get_num_procs() > 1L) {RhpcBLASctl::blas_set_num_threads(1L)}
       if (RhpcBLASctl::omp_get_num_procs() > 1L)  {RhpcBLASctl::omp_set_num_threads(1L)}
 
-      # SEQUENTIAL PROCESSING WITHIN THE WORKER
-      chunk_res <- lapply(seq_along(chunk$raw_bytes), function(k) {
+      # LOAD CHUNK ONCE
+      chunk_raw_bytes <- qs2::qs_read(chunk$file_path)
 
-        raw_data <- chunk$raw_bytes[[k]]
+      chunk_res <- lapply(seq_along(chunk_raw_bytes), function(k) {
+
+        raw_data <- chunk_raw_bytes[[k]]
         if (is.null(raw_data)) return(NA)
 
         vxlgamlss <- qs2::qs_deserialize(raw_data)
 
-        # process only if properly fitted
         if (!isTRUE(vxlgamlss$error) && !is.null(vxlgamlss$vxl)) {
 
           vxlgamlss$family <- familyobj
@@ -188,17 +201,11 @@ predict.vbgamlss <- function(object,
         cat(sprintf("\n=== ERROR CAUGHT [%s] ===\n%s\n--- TRACEBACK ---\n",
                     Sys.time(), conditionMessage(e)),
             file = logfile, append = TRUE)
-
-        capture.output(print(sys.calls()),
-                       file = logfile,
-                       append = TRUE)
+        capture.output(print(sys.calls()), file = logfile, append = TRUE)
       }
     })
 
-  }, future.seed = TRUE,
-  future.globals = c("familyobj", "newdata", "ptype", "terms", "what", "segmentation_target", "fname", "logdir"),
-  future.packages = c("qs2", "RhpcBLASctl", "gamlss", "gamlss2"))
-
+  }, future.seed = TRUE)
 
   cat("[DEBUG 9] future_lapply finished. Reverting thread controls...\n")
   if (RhpcBLASctl::blas_get_num_procs() != master_blas)
@@ -213,7 +220,6 @@ predict.vbgamlss <- function(object,
   cat("[DEBUG 11] Done.\n")
   return(structure(predictions, class = "vbgamlss.predictions"))
 }
-
 
 
 
