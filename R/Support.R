@@ -195,7 +195,10 @@ predict.vbgamlss <- function(object,
       }
     })
 
-  }, future.seed = TRUE)
+  }, future.seed = TRUE,
+  future.globals = c("familyobj", "newdata", "ptype", "terms", "what", "segmentation_target", "fname", "logdir"),
+  future.packages = c("qs2", "RhpcBLASctl", "gamlss", "gamlss2"))
+
 
   cat("[DEBUG 9] future_lapply finished. Reverting thread controls...\n")
   if (RhpcBLASctl::blas_get_num_procs() != master_blas)
