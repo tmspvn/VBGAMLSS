@@ -371,6 +371,7 @@ predictGD <- function (object,
         vxlGD$vxl <- nfitted[[i]]$vxl
         vxlGD
       }, error = function(e) {
+        print(e)
         NA # Return NA if the math fails
       })
 

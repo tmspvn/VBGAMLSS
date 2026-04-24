@@ -96,7 +96,7 @@ predict.vbgamlss <- function(object,
   } else {
     future::plan(strategy=future_plan_strategy, workers=num_cores)
   }
-  options(future.globals.maxSize=10*1024^3) # 10 GB max per prediction
+  options(future.globals.maxSize=50*1024^3) # 10 GB max per prediction
 
   # get blas omp values
   master_blas <- RhpcBLASctl::blas_get_num_procs()
@@ -105,8 +105,8 @@ predict.vbgamlss <- function(object,
   # split indices to match Core.R chunking
   chunked_indices <- as.list(itertools::isplitIndices(length(object), chunks=Nchunks))
 
-  # 1. PRE-EXTRACT CHUNKS AND BUNDLE DATA
-  cat("Extracting data chunks...\n")
+  # PRE-EXTRACT CHUNKS AND BUNDLE DATA
+  cat("Preparing data chunks\n")
   prepared_chunks <- lapply(chunked_indices, function(idx_chunk) {
     list(
       raw_bytes = lapply(idx_chunk, function(idx) .subset2(object, idx)),
@@ -114,15 +114,14 @@ predict.vbgamlss <- function(object,
     )
   })
 
-  # 2. NUKE THE MASTER OBJECTS TO PREVENT MEMORY LEAKS TO WORKERS
-  # This stops the "FUN() is 18 GiB" error dead in its tracks.
+  # NUKE THE MASTER OBJECTS TO PREVENT MEMORY LEAKS TO WORKERS
   rm(object)
   if (exists("segmentation")) rm(segmentation)
   gc(verbose = FALSE)
 
   cat(paste0("Predicting across ", Nchunks, " chunks...\n"))
 
-  # 3. PARALLELIZE OVER THE LIST DIRECTLY
+  # PARALLELIZE OVER THE LIST DIRECTLY
   # By passing `prepared_chunks` as X, future splits it and sends only 1 chunk per worker.
   chunk_predictions <- future.apply::future_lapply(prepared_chunks, function(chunk) {
 
@@ -143,7 +142,7 @@ predict.vbgamlss <- function(object,
 
         vxlgamlss$family <- familyobj
 
-        # Subsetting happens safely inside the sequential loop
+        # Subset safely inside the sequential loop
         vxl_newdata <- newdata
         if (!is.null(chunk$seg_data)) {
           vxl_newdata$tissue <- chunk$seg_data[, k]
@@ -181,8 +180,10 @@ predict.vbgamlss <- function(object,
   }, future.seed = TRUE)
 
   # Reverse blas and openmp threads control (Master session)
-  if (RhpcBLASctl::blas_get_num_procs() != master_blas) {RhpcBLASctl::blas_set_num_threads(master_blas)}
-  if (RhpcBLASctl::omp_get_num_procs() != master_omp)   {RhpcBLASctl::omp_set_num_threads(master_omp)}
+  if (RhpcBLASctl::blas_get_num_procs() != master_blas)
+    {RhpcBLASctl::blas_set_num_threads(master_blas)}
+  if (RhpcBLASctl::omp_get_num_procs() != master_omp)
+    {RhpcBLASctl::omp_set_num_threads(master_omp)}
 
   # 4. FLATTEN RESULTS
   predictions <- unlist(chunk_predictions, recursive = FALSE)
@@ -193,7 +194,7 @@ predict.vbgamlss <- function(object,
 
 
 
-# ------------------------------------------------------------------------------
+# ------------------------------------
 #' Compute Z-scores for vbgamlss predictions given Y voxel data and image mask.
 #' @param predictions A vbgamlss.predictions object.
 #' @param yimageframe A data.frame or matrix of observed response values.
