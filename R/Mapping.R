@@ -5,42 +5,83 @@
 
 
 
-#' Write coefficient maps to NIfTI files
+#' Write coefficient maps to NIfTI files (Scenario B - Transformed Intercepts)
 #'
 #' Convert per-voxel model coefficients from a fitted \code{vbgamlss} object
-#' into coefficient images, one image per coefficient, and save them to disk.
+#' into coefficient images. Intercepts are transformed to the original parameter scale
+#' (Baseline Average), while covariates remain on the link scale (Effect Sizes).
 #'
-#' @param fittedobj A fitted object of class \code{"vbgamlss"} produced by voxel-wise fitting. Each element must contain a \code{$coefficients} vector with identical names and length across voxels.
-#' @param mask An ANTs image (or path) defining the analysis mask that encodes image geometry for mapping matrices back to images.
-#' @param filename Character prefix for output files. The function appends \code{"_par-<PAR>_coef-(<TERM>).nii.gz"} for each coefficient.
-#' @param return_files Logical, if \code{TRUE} return the vector of file paths, otherwise return \code{invisible(NULL)}. Default \code{FALSE}.
-#' @return If \code{return_files = TRUE}, a character vector of output paths. Files are written in NIfTI format.
+#' @param fittedobj A fitted object of class \code{"vbgamlss"} produced by voxel-wise fitting.
+#' @param mask An ANTs image (or path) defining the analysis mask.
+#' @param filename Character prefix for output files.
+#' @param return_files Logical, return the vector of file paths. Default \code{FALSE}.
+#' @return If \code{return_files = TRUE}, a character vector of output paths.
 #' @export
-map_model_coefficients <- function(fittedobj, mask, filename, return_files=FALSE){
-  if (class(fittedobj) != "vbgamlss") { stop("fittedobj must be of class vbgamlss.")}
-  message('Warning, specific coefficients from special model terms cannot be map (e.g. pb(), s())')
+map_model_coefficients <- function(fittedobj, mask, filename, return_files = FALSE){
+
+  if (class(fittedobj) != "vbgamlss") {
+    stop("fittedobj must be of class vbgamlss.")
+  }
+
+  message('Warning: specific coefficients from special model terms cannot be mapped (e.g. pb(), s())')
+
   nvox <- length(fittedobj)
   first_mod_coefs <- unlist(fittedobj[[1]]$coefficients)
   name_coefs <- names(first_mod_coefs)
   ncoefs <- length(first_mod_coefs)
+
+  # Build the raw coefficient matrix (link scale)
   coefs_mat <- matrix(nrow = ncoefs, ncol = nvox)
   for (i in 1:nvox) {
     coefs_mat[,i] <- unlist(fittedobj[[i]]$coefficients)
   }
-  # convert mat to maps
-  coef_maps_images <- matrixToImages(coefs_mat, antsImageRead(mask, 3))
-  # save files
-  fnames <- c()
-  for (i in 1:length(coef_maps_images)) {
-    # parse coef name
+
+  # Extract the family object to get the transformation functions
+  fam <- fittedobj[[1]]$family
+
+  # Transform ONLY the Intercept rows to the original scale
+  for (i in 1:ncoefs) {
     parts <- strsplit(name_coefs[i], "\\.")[[1]]
-    if (parts[2] != '(Intercept)') {parts[2] = paste0('(', parts[2], ')')}
-    fname <- paste0(filename, '_par-', toupper(parts[1]), '_coef-', parts[2],'.nii.gz')
-    # save
+    par_name <- parts[1]
+    term_name <- parts[2]
+
+    if (term_name == "(Intercept)") {
+      # gamlss2's map2par expects a named list of vectors.
+      # We wrap the entire matrix row in a list, transform it, and put it back.
+      temp_list <- list()
+      temp_list[[par_name]] <- coefs_mat[i, ]
+
+      # Convert to native scale
+      transformed_list <- fam$map2par(temp_list)
+
+      # Overwrite the link-scale intercept row with the original-scale values
+      coefs_mat[i, ] <- transformed_list[[par_name]]
+    }
+  }
+
+  # Convert matrix to maps
+  coef_maps_images <- matrixToImages(coefs_mat, antsImageRead(mask, 3))
+
+  # Save files
+  fnames <- character(length(coef_maps_images))
+  for (i in 1:length(coef_maps_images)) {
+
+    parts <- strsplit(name_coefs[i], "\\.")[[1]]
+
+    # Rename the file output slightly so you know the intercept is transformed
+    if (parts[2] == '(Intercept)') {
+      term_label <- 'Intercept'
+    } else {
+      term_label <- paste0('(', parts[2], ')')
+    }
+
+    fname <- paste0(filename, '_par-', toupper(parts[1]), '_coef-', term_label, '.nii.gz')
+
     antsImageWrite(coef_maps_images[[i]], fname)
     fnames[i] <- fname
   }
-  if (return_files) {return(fnames)}
+
+  if (return_files) { return(fnames) }
 }
 
 

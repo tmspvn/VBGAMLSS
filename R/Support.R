@@ -84,6 +84,7 @@ predict.vbgamlss <- function(object,
                              what = NULL,
                              future_plan_strategy = "future.mirai::mirai_cluster",
                              chunk_max_mb = 1024,
+                             se.fit=FALSE,
                              ...) {
 
   # Checks
@@ -176,7 +177,8 @@ predict.vbgamlss <- function(object,
 
         # Actual predict call
         pred_res <- tryCatch({
-          predict(vxlgamlss, newdata = vxl_newdata, type = ptype, terms = terms, what = what, ...)
+          predict(vxlgamlss, newdata = vxl_newdata, type = ptype,
+                  terms = terms, what = what, se.fit = se.fit, ...)
         }, error = function(e) structure(e$message, class = "try-error"))
 
         if (inherits(pred_res, "try-error")) {
@@ -309,6 +311,18 @@ zscore.vbgamlss <- function(predictions, yimageframe, num_cores=NULL){
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+# ------------------------------------
 #' Apply kernel james-stein shrinkage to intercept coefficients of a vbgamlss
 #'
 #' @export
