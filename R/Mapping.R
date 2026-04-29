@@ -87,6 +87,7 @@ map_model_coefficients <- function(fittedobj, mask, filename, return_files = FAL
 
 
 
+
 #' Write prediction maps to NIfTI files
 #'
 #' Convert per-voxel predicted parameter (μ,σ,ν,τ) values from a \code{vbgamlss.predictions} object into images and save them to disk.
@@ -146,6 +147,7 @@ map_model_predictions <- function(obj, mask, filename, index=NULL,
 
 
 
+
 #' Write voxel-wise z-score maps to NIfTI files
 #'
 #' Convert per-voxel z-scores stored in a \code{"vbgamlss.zscores"} object into images and save one NIfTI file per subject.
@@ -155,13 +157,16 @@ map_model_predictions <- function(obj, mask, filename, index=NULL,
 #' @param filename Character prefix for output files. The function appends \code{"_subj-<ID>.zscore.nii.gz"}.
 #' @param index Optional integer vector of subject indices to export. If \code{NULL} (default), all subjects are exported.
 #' @param return_files Logical, if \code{TRUE} return the vector of written file paths. Default \code{FALSE}.
-#' @param output_3D Logical, if \code{FALSE} return an image per subject. Default \code{TRUE}.
+#' @param output_4D Logical, if \code{FALSE} return an image per subject. Default \code{TRUE}.
 #' @export
 map_zscores <- function(zscores, mask, filename, index=NULL,
                         return_files=FALSE, output_4D=TRUE) {
 
   if (!inherits(zscores, "vbgamlss.zscores")) { stop("zscores must be of class vbgamlss.zscores")}
-  if (!is.null(index)) {cat(paste0('Mapping predictions index: ', list(index)), fill=T)}
+
+  if (!is.null(index)) {
+    cat('Mapping predictions index:', paste(index, collapse=", "), '\n')
+  }
 
   # prepare useful info
   nvox <- length(zscores)
@@ -176,12 +181,8 @@ map_zscores <- function(zscores, mask, filename, index=NULL,
     nsubj <- length(subj)
   }
 
-  # process
-  z_mat <- matrix(nrow=nsubj, ncol=nvox)
-  for (ic in 1:nvox) {
-    # voxel #subjects
-    z_mat[, ic] <- zscores[[ic]][subj]
-  }
+  # process: Fast vectorized matrix binding, then subsetting
+  z_mat <- do.call(cbind, zscores)[subj, , drop = FALSE]
 
   # convert mat to maps
   mask_img <- antsImageRead(mask, 3)
@@ -231,6 +232,8 @@ map_zscores <- function(zscores, mask, filename, index=NULL,
 
   if (return_files) {return(fnames)}
 }
+
+
 
 
 
@@ -294,6 +297,24 @@ map_zscores_from_map <- function(yimage,
   zmap <- matrixToImages(matrix(unlist(subzs), nrow = 1), antsImageRead(mask,3))
   return(zmap[[1]])
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+################################################################################
+# testing
+
+
 
 
 
