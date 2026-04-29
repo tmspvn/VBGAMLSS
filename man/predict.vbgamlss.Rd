@@ -11,33 +11,47 @@
   ptype = "parameter",
   segmentation = NULL,
   segmentation_target = NULL,
-  afold = NULL,
   terms = NULL,
   what = NULL,
   future_plan_strategy = "future.mirai::mirai_cluster",
+  chunk_max_mb = 1024,
+  se.fit = FALSE,
   ...
 )
 }
 \arguments{
 \item{object}{vbgamlss object to make predictions from.}
 
-\item{newdata}{New data to use for predictions. Must be data.frame}
+\item{newdata}{New data to use for predictions. Must be data.frame.}
 
 \item{num_cores}{Number of CPU cores to use for parallel processing.
-Defaults to one less than the total available cores if not provided.}
+Defaults to available cores if not provided.}
 
-\item{ptype}{Type of prediction to make: "parameter", "link", "response", "terms". Defaults to "parameter".}
+\item{ptype}{Type of prediction to make: "parameter", "link", "response", "terms".
+Defaults to "parameter".}
 
-\item{segmentation}{Optional image/path with region labels.}
+\item{segmentation}{Optional data.frame or matrix with region labels (e.g., tissue types)
+mapping to the voxels in the object.}
 
-\item{segmentation_target}{Optional. Integer to evaluate (eg 1).}
+\item{segmentation_target}{Optional integer. If provided, the prediction is only
+performed for voxels where the segmentation matches this value.}
 
-\item{afold}{Optional. Integer, fold index when predicting CV folds (for internal use).}
+\item{terms}{Optional character vector. What terms to include in prediction. See gamlss2 doc.}
 
-\item{...}{Additional arguments passed to the predict.gamlss2 function.}
+\item{what}{Optional character. Specifies which distribution parameter to predict
+(e.g., "mu", "sigma").}
+
+\item{future_plan_strategy}{Character. The parallel back-end strategy to use.
+Defaults to "future.mirai::mirai_cluster".}
+
+\item{chunk_max_mb}{Integer. Maximum size in MB for each data chunk sent to workers.
+Defaults to 1024.}
+
+\item{...}{Additional arguments passed to the underlying predict.gamlss2 function.}
 }
 \value{
-A structure containing predictions.
+A structure of class "vbgamlss.predictions" containing a list of
+prediction results for each voxel.
 }
 \description{
 Predict method for vbgamlss objects

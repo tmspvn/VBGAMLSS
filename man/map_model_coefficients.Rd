@@ -2,23 +2,24 @@
 % Please edit documentation in R/Mapping.R
 \name{map_model_coefficients}
 \alias{map_model_coefficients}
-\title{Write coefficient maps to NIfTI files}
+\title{Write coefficient maps to NIfTI files (Scenario B - Transformed Intercepts)}
 \usage{
 map_model_coefficients(fittedobj, mask, filename, return_files = FALSE)
 }
 \arguments{
-\item{fittedobj}{A fitted object of class \code{"vbgamlss"} produced by voxel-wise fitting. Each element must contain a \code{$coefficients} vector with identical names and length across voxels.}
+\item{fittedobj}{A fitted object of class \code{"vbgamlss"} produced by voxel-wise fitting.}
 
-\item{mask}{An ANTs image (or path) defining the analysis mask that encodes image geometry for mapping matrices back to images.}
+\item{mask}{An ANTs image (or path) defining the analysis mask.}
 
-\item{filename}{Character prefix for output files. The function appends \code{"_par-<PAR>_coef-(<TERM>).nii.gz"} for each coefficient.}
+\item{filename}{Character prefix for output files.}
 
-\item{return_files}{Logical, if \code{TRUE} return the vector of file paths, otherwise return \code{invisible(NULL)}. Default \code{FALSE}.}
+\item{return_files}{Logical, return the vector of file paths. Default \code{FALSE}.}
 }
 \value{
-If \code{return_files = TRUE}, a character vector of output paths. Files are written in NIfTI format.
+If \code{return_files = TRUE}, a character vector of output paths.
 }
 \description{
 Convert per-voxel model coefficients from a fitted \code{vbgamlss} object
-into coefficient images, one image per coefficient, and save them to disk.
+into coefficient images. Intercepts are transformed to the original parameter scale
+(Baseline Average), while covariates remain on the link scale (Effect Sizes).
 }

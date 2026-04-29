@@ -24,7 +24,7 @@ map_zscores(
 
 \item{return_files}{Logical, if \code{TRUE} return the vector of written file paths. Default \code{FALSE}.}
 
-\item{output_3D}{Logical, if \code{FALSE} return an image per subject. Default \code{TRUE}.}
+\item{output_4D}{Logical, if \code{FALSE} return an image per subject. Default \code{TRUE}.}
 }
 \description{
 Convert per-voxel z-scores stored in a \code{"vbgamlss.zscores"} object into images and save one NIfTI file per subject.
