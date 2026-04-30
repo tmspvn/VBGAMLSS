@@ -9,7 +9,7 @@
 #
 #
 #' @export
-vbgamlss.cv <- function(imageframe,
+vbgamlss.lobocv <- function(imageframe,
                         g.formula,
                         train.data,
                         fold.var, # vector of length Nsubjects with integers indicating fold di appartenenza

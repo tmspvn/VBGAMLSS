@@ -43,8 +43,13 @@ vbgamlss.evaluate <- function(imageframe,
 
   # 3. Summarize statistics
   cat("Summarizing brain-wide statistics...\n")
+  all_dfs <- unlist(pbmcapply::pbmclapply(model, function(m_ser) {
+                    # Deserializing each voxel fit
+                    m_obj <- qs2::qs_read(m_ser)
+                    return(m_obj$df)
+                  }, mc.cores = num_cores))
   stats <- statGD(GDs,
-                  deg.fre = model[[1]]$df,
+                  deg.fre = all_dfs,
                   n_obs = nrow(data),
                   return_all = return_all_metrics)
 

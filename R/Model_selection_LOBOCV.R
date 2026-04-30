@@ -8,7 +8,7 @@
 
 
 #' @export
-vbgamlss.model_selection <- function(# model selection commands
+vbgamlss.model_selection_LOBO <- function(# model selection commands
                                       result_file,  # where to save
                                       run_name = "cv_run",
                                       resume_registry=NULL,  # pass registry file, works as toggle for resume
