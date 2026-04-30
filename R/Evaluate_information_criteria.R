@@ -48,7 +48,8 @@ vbgamlss.evaluate <- function(imageframe,
                     m_obj <- qs2::qs_read(m_ser)
                     return(m_obj$df)
                   }, mc.cores = num_cores))
-  stats <- statGD(GDs,
+
+  stats <- statGD_EIC(GDs,
                   deg.fre = all_dfs,
                   n_obs = nrow(data),
                   return_all = return_all_metrics)
@@ -154,7 +155,7 @@ testGD <- function(nfit, familyobj) {
 
 # --------------------------------
 # Brain-wide Summary (Now explicitly calculating AIC & BIC)
-statGD <- function(GDs, deg.fre, n_obs, return_all = FALSE) {
+statGD_EIC <- function(GDs, deg.fre, n_obs, return_all = FALSE) {
   missfits <- sum(is.na(GDs))
   nvxl <- length(GDs)
 
