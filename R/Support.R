@@ -167,6 +167,7 @@ predict.vbgamlss <- function(object,
         # segmentation?
         vxlgamlss$family <- familyobj
         vxl_newdata <- newdata
+        vxl_degfre <- vxlgamlss$df
 
         if (!is.null(chunk$seg_data)) {
           vxl_newdata$tissue <- chunk$seg_data[, k]
@@ -195,6 +196,7 @@ predict.vbgamlss <- function(object,
 
         l$family <- fname
         l$vxl <- vxlgamlss$vxl
+        l$df <- vxl_degfre
         return(l)
 
       } else {

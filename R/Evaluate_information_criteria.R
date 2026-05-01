@@ -47,20 +47,7 @@ vbgamlss.evaluate <- function(imageframe,
 
   # 3. Summarize statistics
   cat("Summarizing brain-wide statistics...\n")
-
-  # Ensure a future plan is active using the num_cores defined earlier
-  future::plan(future::cluster, workers = num_cores)
-
-  # FIX: Robust extraction using future_lapply
-  all_dfs <- unlist(future.apply::future_lapply(model, function(m_ser) {
-    if (is.null(m_ser) || (length(m_ser) == 1 && is.na(m_ser))) {return(NA)}
-      m_obj <- qs2::qs_deserialize(m_ser)
-      if (is.null(m_obj) || is.null(m_obj$df)) return(NA)
-      return(m_obj$df)
-    }, future.seed = TRUE), use.names = FALSE)
-
   stats <- statGD_EIC(GDs,
-                      deg.fre = all_dfs,
                       n_obs = nrow(data),
                       return_all = return_all_metrics)
 
@@ -160,12 +147,13 @@ testGD <- function(nfit, familyobj) {
   ll_obs_censored[cdf_vals < 0.01 | cdf_vals > 0.99] <- -log(0.02)
   vxl_cll <- mean(ll_obs_censored, na.rm = TRUE)
 
-  list(TGD = dev, MAE = vxl_mae, LL = vxl_ll, CLL = vxl_cll)
+  list(TGD = dev, MAE = vxl_mae, LL = vxl_ll, CLL = vxl_cll, df=nfit$df)
 }
+
 
 # --------------------------------
 # Brain-wide Summary (Now explicitly calculating AIC & BIC)
-statGD_EIC <- function(GDs, deg.fre, n_obs, return_all = FALSE) {
+statGD_EIC <- function(GDs, n_obs, return_all = FALSE) {
   missfits <- sum(is.na(GDs))
   nvxl <- length(GDs)
 
@@ -173,6 +161,7 @@ statGD_EIC <- function(GDs, deg.fre, n_obs, return_all = FALSE) {
   MAEs <- numeric(nvxl) * NA
   LLs  <- numeric(nvxl) * NA
   CLLs <- numeric(nvxl) * NA
+  dfs  <- numeric(nvxl) * NA  # Added: Initialize vector for degrees of freedom
 
   for (i in seq_len(nvxl)) {
     if (!is.na(GDs)[i]) {
@@ -180,12 +169,13 @@ statGD_EIC <- function(GDs, deg.fre, n_obs, return_all = FALSE) {
       MAEs[i] <- GDs[[i]]$MAE
       LLs[i]  <- GDs[[i]]$LL
       CLLs[i] <- GDs[[i]]$CLL
+      dfs[i]  <- GDs[[i]]$df   # Added: Extract df for each voxel
     }
   }
 
   # Calculate AIC and BIC using Deviance (TGD) + Penalties
-  AICs <- TGDs + (2 * deg.fre)
-  BICs <- TGDs + (log(n_obs) * deg.fre)
+  AICs <- TGDs + (2 * dfs)
+  BICs <- TGDs + (log(n_obs) * dfs)
 
   to_return <- list(
     GD  = describe_stats(TGDs, ''),
