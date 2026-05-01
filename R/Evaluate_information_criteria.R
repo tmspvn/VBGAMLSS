@@ -13,6 +13,7 @@ vbgamlss.evaluate <- function(imageframe,
                               verbose = FALSE,
                               debug = TRUE,
                               return_all_metrics = TRUE,
+                              logdir=getwd(),
                               ...) {
 
   if (is.null(num_cores)) {num_cores <- future::availableCores()}
@@ -31,6 +32,7 @@ vbgamlss.evaluate <- function(imageframe,
              num_cores = num_cores,
              chunk_max_mb = chunk_max_mb,
              debug = debug,
+             cachedir=get_cache_folders(logdir),
              ...),
     skip = verbose)
 
@@ -45,16 +47,22 @@ vbgamlss.evaluate <- function(imageframe,
 
   # 3. Summarize statistics
   cat("Summarizing brain-wide statistics...\n")
-  all_dfs <- unlist(pbmcapply::pbmclapply(model, function(m_ser) {
-                    # Deserializing each voxel fit
-                    m_obj <- qs2::qs_read(m_ser)
-                    return(m_obj$df)
-                  }, mc.cores = num_cores))
+
+  # Ensure a future plan is active using the num_cores defined earlier
+  future::plan(future::cluster, workers = num_cores)
+
+  # FIX: Robust extraction using future_lapply
+  all_dfs <- unlist(future.apply::future_lapply(model, function(m_ser) {
+    if (is.null(m_ser) || (length(m_ser) == 1 && is.na(m_ser))) {return(NA)}
+      m_obj <- qs2::qs_deserialize(m_ser)
+      if (is.null(m_obj) || is.null(m_obj$df)) return(NA)
+      return(m_obj$df)
+    }, future.seed = TRUE), use.names = FALSE)
 
   stats <- statGD_EIC(GDs,
-                  deg.fre = all_dfs,
-                  n_obs = nrow(data),
-                  return_all = return_all_metrics)
+                      deg.fre = all_dfs,
+                      n_obs = nrow(data),
+                      return_all = return_all_metrics)
 
   rm(model, GDs)
   gc()
@@ -208,4 +216,25 @@ describe_stats <- function(x, vname) {
     eval(parse(text=paste0('out <- c(out,', fn, vname, ' = ', fn, vname, ')')))
   }
   return(out)
+}
+
+
+# --------------------------------
+get_cache_folders <- function(parent_dir) {
+  if (!dir.exists(parent_dir)) {
+    stop("The specified parent directory does not exist.")
+  }
+
+  all_dirs <- list.dirs(parent_dir, full.names = TRUE, recursive = FALSE)
+  cache_dirs <- all_dirs[grepl("^\\.vbgamlss\\.cache", basename(all_dirs))]
+
+  if (length(cache_dirs) == 0) {
+    return(parent_dir)
+  } else {
+    # FIX: Return only the first element to prevent passing a vector of paths
+    return(cache_dirs[1])
+  }
+}
+
+
 }

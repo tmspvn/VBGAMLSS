@@ -170,7 +170,8 @@ vbgamlss.model_selection_EIC <- function(# model selection commands
                                             verbose            = verbose,
                                             return_all_metrics = return_all_metrics,
                                             num_cores          = NULL,
-                                            debug              = T)
+                                            debug              = T,
+                                            logdir             = slurm$wd)
                    warnings()
                    qs2::qs_save(out, '{slurm$rdsout}')
                    ")
