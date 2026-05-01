@@ -1,7 +1,6 @@
 #############################  Model Evaluation  ###############################
 
-#' @export
-# #############################  Model Evaluation  ###############################
+
 
 #' @export
 vbgamlss.evaluate <- function(imageframe,
@@ -55,7 +54,7 @@ vbgamlss.evaluate <- function(imageframe,
     GDs <- qs_read(prediction_cache_file)
   } else {
     cat("Predicting and computing metrics...\n")
-    GDs <- predict_metrics(model,
+    GDs <- predict_metrics_EIC(model,
                            test_imageframe = imageframe,
                            newdata = data,
                            verbose = verbose,
@@ -83,7 +82,7 @@ vbgamlss.evaluate <- function(imageframe,
 
 # --------------------------------
 # Streamlined Prediction (No CV/Disk States)
-predict_metrics <- function(object, test_imageframe, newdata, verbose, segmentation, segmentation_target) {
+predict_metrics_EIC <- function(object, test_imageframe, newdata, verbose, segmentation, segmentation_target) {
 
   familyobj <- restore_family(object[[1]])$family
 
@@ -116,7 +115,7 @@ predict_metrics <- function(object, test_imageframe, newdata, verbose, segmentat
   plan(strategy = "future::cluster", workers = availableCores())
   GDs <- foreach(i = seq_along(nfitted)) %dofuture% {
     if (!is.na(nfitted)[i]) {
-      tryCatch({ testGD(nfitted[[i]], familyobj) }, error = function(e) NA)
+      tryCatch({ testGD_EIC(nfitted[[i]], familyobj) }, error = function(e) NA)
     } else {
       NA
     }
@@ -127,7 +126,7 @@ predict_metrics <- function(object, test_imageframe, newdata, verbose, segmentat
 
 # --------------------------------
 # Voxel-wise metrics (Unchanged core math, returns deviance, MAE, LL, CLL)
-testGD <- function(nfit, familyobj) {
+testGD_EIC <- function(nfit, familyobj) {
   require(gamlss.dist, quietly = TRUE)
 
   dfun <- paste("d", familyobj$family, sep = "")
