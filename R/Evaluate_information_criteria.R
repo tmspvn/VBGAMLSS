@@ -1,6 +1,9 @@
 #############################  Model Evaluation  ###############################
 
 #' @export
+# #############################  Model Evaluation  ###############################
+
+#' @export
 vbgamlss.evaluate <- function(imageframe,
                               g.formula,
                               data,
@@ -13,10 +16,17 @@ vbgamlss.evaluate <- function(imageframe,
                               verbose = FALSE,
                               debug = TRUE,
                               return_all_metrics = TRUE,
-                              logdir=getwd(),
+                              logdir = getwd(),
+                              force_predict_recompute = FALSE,
                               ...) {
 
+  # Ensure qs2 is loaded for fast I/O
+  require(qs2, quietly = TRUE)
+
   if (is.null(num_cores)) {num_cores <- future::availableCores()}
+
+  # Determine cache directory
+  current_cache_dir <- get_cache_folders(logdir)
 
   cat("Fitting model on full dataset...\n")
 
@@ -32,18 +42,30 @@ vbgamlss.evaluate <- function(imageframe,
              num_cores = num_cores,
              chunk_max_mb = chunk_max_mb,
              debug = debug,
-             cachedir=get_cache_folders(logdir),
+             cachedir = current_cache_dir,
              ...),
     skip = verbose)
 
-  # 2. Predict on the same data
-  cat("Predicting and computing metrics...\n")
-  GDs <- predict_metrics(model,
-                         test_imageframe = imageframe,
-                         newdata = data,
-                         verbose = verbose,
-                         segmentation = segmentation,
-                         segmentation_target = segmentation_target)
+  # 2. Predict on the same data (WITH CACHING via qs2)
+  # Changed file extension to .qs
+  prediction_cache_file <- file.path(current_cache_dir, "GDs_prediction_cache.qs")
+
+  if (file.exists(prediction_cache_file) && !force_predict_recompute) {
+    cat("Loading precomputed prediction metrics from cache (qs2)...\n")
+    GDs <- qs_read(prediction_cache_file)
+  } else {
+    cat("Predicting and computing metrics...\n")
+    GDs <- predict_metrics(model,
+                           test_imageframe = imageframe,
+                           newdata = data,
+                           verbose = verbose,
+                           segmentation = segmentation,
+                           segmentation_target = segmentation_target)
+
+    # Save the computed metrics to cache for future runs using qs2
+    cat("Saving prediction metrics to cache (qs2)...\n")
+    qs_save(GDs, file = prediction_cache_file)
+  }
 
   # 3. Summarize statistics
   cat("Summarizing brain-wide statistics...\n")
@@ -56,6 +78,8 @@ vbgamlss.evaluate <- function(imageframe,
 
   return(stats)
 }
+
+
 
 # --------------------------------
 # Streamlined Prediction (No CV/Disk States)
@@ -111,7 +135,7 @@ testGD <- function(nfit, familyobj) {
   lpar <- length(familyobj$names)
 
   if (all(is.nan(nfit$y)) || all(is.na(nfit$y))) {
-    return(list(TGD = NA, MAE = NA, LL = NA, CLL = NA))
+    return(list(TGD = NA, MAE = NA, LL = NA, CLL = NA, df = NA))
   }
 
   yisnan <- is.nan(nfit$y)
@@ -147,29 +171,33 @@ testGD <- function(nfit, familyobj) {
   ll_obs_censored[cdf_vals < 0.01 | cdf_vals > 0.99] <- -log(0.02)
   vxl_cll <- mean(ll_obs_censored, na.rm = TRUE)
 
-  list(TGD = dev, MAE = vxl_mae, LL = vxl_ll, CLL = vxl_cll, df=nfit$df)
+  df_val <- if(is.null(nfit$df)) NA else nfit$df
+
+  list(TGD = dev, MAE = vxl_mae, LL = vxl_ll, CLL = vxl_cll, df = df_val)
 }
 
 
 # --------------------------------
 # Brain-wide Summary (Now explicitly calculating AIC & BIC)
 statGD_EIC <- function(GDs, n_obs, return_all = FALSE) {
-  missfits <- sum(is.na(GDs))
+  # Note: is.na on a list might not work as intended for missing elements.
+  # We count missfits by checking if the element is NOT a list.
+  missfits <- sum(!vapply(GDs, is.list, logical(1)))
   nvxl <- length(GDs)
 
   TGDs <- numeric(nvxl) * NA
   MAEs <- numeric(nvxl) * NA
   LLs  <- numeric(nvxl) * NA
   CLLs <- numeric(nvxl) * NA
-  dfs  <- numeric(nvxl) * NA  # Added: Initialize vector for degrees of freedom
+  dfs  <- numeric(nvxl) * NA
 
   for (i in seq_len(nvxl)) {
-    if (!is.na(GDs)[i]) {
-      TGDs[i] <- GDs[[i]]$TGD
-      MAEs[i] <- GDs[[i]]$MAE
-      LLs[i]  <- GDs[[i]]$LL
-      CLLs[i] <- GDs[[i]]$CLL
-      dfs[i]  <- GDs[[i]]$df   # Added: Extract df for each voxel
+    if (is.list(GDs[[i]])) {
+      TGDs[i] <- if (is.null(GDs[[i]]$TGD)) NA else GDs[[i]]$TGD
+      MAEs[i] <- if (is.null(GDs[[i]]$MAE)) NA else GDs[[i]]$MAE
+      LLs[i]  <- if (is.null(GDs[[i]]$LL)) NA else GDs[[i]]$LL
+      CLLs[i] <- if (is.null(GDs[[i]]$CLL)) NA else GDs[[i]]$CLL
+      dfs[i]  <- if (is.null(GDs[[i]]$df)) NA else GDs[[i]]$df
     }
   }
 
