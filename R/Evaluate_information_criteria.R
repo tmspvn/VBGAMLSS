@@ -15,6 +15,8 @@ vbgamlss.evaluate <- function(imageframe,
                               return_all_metrics = TRUE,
                               ...) {
 
+  if (is.null(num_cores)) {num_cores <- future::availableCores()}
+
   cat("Fitting model on full dataset...\n")
 
   # 1. Fit the model once
