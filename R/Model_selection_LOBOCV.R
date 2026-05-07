@@ -159,23 +159,23 @@ vbgamlss.model_selection_LOBO <- function(# model selection commands
                     set.seed(04281945)
                     imageframe <- images2matrix(image, g.mask)
                     dtfr <- read.csv(train.data, stringsAsFactors = T)
-                    out <- vbgamlss.cv( g.formula    = g.formula,
-                                        imageframe   = imageframe,
-                                        train.data   = dtfr,
-                                        fold.var     = fold.var,
-                                        g.family     = g.family,
-                                        segmentation = segmentation,
-                                        chunk_max_mb = chunk_max_mb,
-                                        force_constraints = g.constraints,
-                                        k.penalty    = k.penalty,
-                                        verbose      = verbose,
-                                        return_all_GD = return_all_GD,
-                                        num_cores    = NULL,
-                                        debug        = T,
-                                        save_states  = T,
-                                        resume       = T,
-                                        drop_re      = T,
-                                        logdir     = slurm$wd)
+                    out <- vbgamlss.lobocv( g.formula    = g.formula,
+                                            imageframe   = imageframe,
+                                            train.data   = dtfr,
+                                            fold.var     = fold.var,
+                                            g.family     = g.family,
+                                            segmentation = segmentation,
+                                            chunk_max_mb = chunk_max_mb,
+                                            force_constraints = g.constraints,
+                                            k.penalty    = k.penalty,
+                                            verbose      = verbose,
+                                            return_all_GD = return_all_GD,
+                                            num_cores    = NULL,
+                                            debug        = T,
+                                            save_states  = T,
+                                            resume       = T,
+                                            drop_re      = T,
+                                            logdir     = slurm$wd)
                     warnings()
                     qs2::qs_save(out, slurm$rdsout)
                     ")
