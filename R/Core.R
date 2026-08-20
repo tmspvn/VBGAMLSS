@@ -481,7 +481,7 @@ vbgamlss <- function(imageframe,
 
 
 
-#' Define the S3 subsetting method, here it would cool to include restore_family..
+#' Define the S3 subsetting method
 #'
 #' @rawNamespace S3method("[[", vbgamlss)
 `[[.vbgamlss` <- function(x, i, ...) {

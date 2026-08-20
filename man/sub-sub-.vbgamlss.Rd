@@ -2,10 +2,10 @@
 % Please edit documentation in R/Core.R
 \name{[[.vbgamlss}
 \alias{[[.vbgamlss}
-\title{Define the S3 subsetting method, here it would cool to include restore_family..}
+\title{Define the S3 subsetting method}
 \usage{
 \method{[[}{vbgamlss}(x, i, ...)
 }
 \description{
-Define the S3 subsetting method, here it would cool to include restore_family..
+Define the S3 subsetting method
 }
