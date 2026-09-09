@@ -30,6 +30,7 @@ vbgamlss.model_selection_LOBO <- function(# model selection commands
                                       k.penalty=NULL,
                                       verbose=F,
                                       return_all_GD=T,
+                                      keep_all_GD=F, # keep the bulky per-voxel all* arrays in the *gathered/combined* result_file (memory-heavy; they remain on disk per-formula regardless, see gather_jobs_outputs)
                                       ...){
 
   if (!is.character(train.data)) { stop("train.data class must be a path") }
@@ -230,7 +231,7 @@ vbgamlss.model_selection_LOBO <- function(# model selection commands
   # ---------------------------------------------------------
   # Gather the results
   cat(paste0('gathering results\n'))
-  results <- gather_jobs_outputs(registry)
+  results <- gather_jobs_outputs(registry, keep_all_GD = keep_all_GD)
   qs2::qs_save(results, result_file)
   cat(paste0('Done.\n\n\n\n'))
   warnings()
@@ -477,10 +478,54 @@ monitor_jobs <- function(registry, sleep=10, resbatch=NULL) {
 
 
 # -----------------------------------------------------------
-gather_jobs_outputs <- function(registry){
-  final <- setNames(lapply(seq_along(registry$formula),
-                           function(i) qs2::qs_read(registry$jobs_results[[i]])),
-                    registry$formula)
+# Recursively drop the bulky per-voxel arrays (any list element whose name
+# starts with 'all', e.g. allGD, allPredErr, allMAE, allLL, allCLL, allResid,
+# allAIC, allBIC -- see statGD()/statGD_EIC()) from a gathered result, keeping
+# only the compact describe_stats() summaries (mean/sd/quantiles/min/max).
+# The full arrays are not lost: they remain on disk in each job's own
+# '.results.qs' file (registry$jobs_results) and in that job's CV state
+# directory, so they can still be reloaded per-formula if truly needed.
+.strip_heavy_GD_arrays <- function(x) {
+  if (is.list(x)) {
+    nm <- names(x)
+    if (!is.null(nm)) {
+      keep <- !grepl("^all", nm)
+      x <- x[keep]
+    }
+    x <- lapply(x, .strip_heavy_GD_arrays)
+  }
+  return(x)
+}
+
+
+
+
+# -----------------------------------------------------------
+# Gather per-formula job outputs from disk into one combined result.
+#
+# Streams one job at a time (read -> optionally strip -> store -> gc()) so
+# that at most one job's *full* result (including any bulky per-voxel arrays)
+# is ever resident in memory simultaneously -- for LOBO/nested CV runs with
+# many formulas/folds and return_all_GD=TRUE, holding every formula's full
+# result in memory at once is the usual cause of an out-of-memory kill here.
+#
+# @param keep_all_GD logical. If FALSE (default), drop the bulky all* voxel-
+#        wise arrays from the combined result (they remain available on disk
+#        per-formula, see .strip_heavy_GD_arrays). Set TRUE only if you need
+#        every formula's full voxel-wise arrays gathered together in memory.
+gather_jobs_outputs <- function(registry, keep_all_GD = FALSE){
+  nfm <- length(registry$formula)
+  final <- vector("list", nfm)
+  names(final) <- registry$formula
+
+  for (i in seq_len(nfm)) {
+    cat(sprintf('\t| Gathering job %d/%d: %s\n', i, nfm, registry$formula[i]))
+    res <- qs2::qs_read(registry$jobs_results[[i]])
+    if (!keep_all_GD) { res <- .strip_heavy_GD_arrays(res) }
+    final[[i]] <- res
+    rm(res)
+    gc()
+  }
   return(final)
 }
 

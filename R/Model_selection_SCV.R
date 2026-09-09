@@ -32,6 +32,7 @@ vbgamlss.model_selection_NCV <- function(# model selection commands
   k.penalty=NULL,
   verbose=F,
   return_all_GD=T,
+  keep_all_GD=F, # keep the bulky per-voxel all* arrays in the *gathered/combined* result_file (memory-heavy; they remain on disk per-formula/per-fold regardless, see gather_jobs_outputs). Nested CV multiplies fold count by (1+k_inner) per formula, so leave FALSE unless you specifically need every formula's raw voxel-wise arrays gathered together.
   ...){
 
   if (!is.character(train.data)) { stop("train.data class must be a path") }
@@ -233,7 +234,7 @@ vbgamlss.model_selection_NCV <- function(# model selection commands
   # ---------------------------------------------------------
   # Gather the results
   cat(paste0('gathering results\n'))
-  results <- gather_jobs_outputs(registry)
+  results <- gather_jobs_outputs(registry, keep_all_GD = keep_all_GD)
 
   # Extra, disposable: a rank-based composite ranking across candidate formulas,
   # combining the outer LOBO (between-batch) and inner CV (within-distribution)
