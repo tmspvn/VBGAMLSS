@@ -84,7 +84,7 @@ vbgamlss.evaluate <- function(imageframe,
 # Streamlined Prediction (No CV/Disk States)
 predict_metrics_EIC <- function(object, test_imageframe, newdata, verbose, segmentation, segmentation_target) {
 
-  familyobj <- restore_family(object[[1]])$family
+  familyobj <- restore_family(first_fitted(object))$family
 
   # Predict Parameters
   cat("\033[34m")

@@ -72,6 +72,7 @@ vbgamlss <- function(imageframe,
                      future_plan_strategy = "future.mirai::mirai_cluster",
                      save_model=NULL,
                      deep_stripping = TRUE, # remove .Enviroments form fitted models
+                     retry_failed = FALSE, # on resume, refit voxels whose status is error/nonconverged
                      ...) {
 
 
@@ -160,39 +161,44 @@ vbgamlss <- function(imageframe,
   if (debug) {
     cat('Debug=TRUE, cache directory and logs will be retained after execution.\n')
   }
-  is_new_cache <- FALSE
+  owned_cache <- FALSE # created (or found via cache_id) by vbgamlss, so safe to delete
+  cache_root  <- cachedir
 
-  # Define the expected path for the registry
+  # Resume: cachedir is either a cache itself, or holds a previous "<cache_id>.vbgamlss.cache.*"
   registry_path <- file.path(cachedir, '.vbgamlss.registry')
+  if (!file.exists(registry_path) && !is.null(cache_id)) {
+    prev <- list.dirs(cachedir, recursive = FALSE)
+    prev <- prev[startsWith(basename(prev), paste0(cache_id, '.vbgamlss.cache.')) &
+                   file.exists(file.path(prev, '.vbgamlss.registry'))]
+    if (length(prev) > 0) {
+      cachedir      <- prev[1]
+      registry_path <- file.path(cachedir, '.vbgamlss.registry')
+      owned_cache   <- TRUE
+    }
+  }
 
-  # If the file exists, resume. If not, new cache
+  registry <- NULL
   if (file.exists(registry_path)) {
-    cat('Cache directory and registry found. Resuming from external/existing cache\n')
     registry <- qs2::qs_read(registry_path)
-    logdir <- file.path(cachedir, '.voxlog')
-    voxfits_subdir_path <- file.path(cachedir, '.voxfits')
+    if (is.null(registry$shard)) {
+      if (!owned_cache) { stop('Cache at ', cachedir, ' was written by an older vbgamlss (one file per voxel), delete it or pass another cachedir') }
+      cat('Ignoring old-format cache', cachedir, '\n')
+      registry <- NULL
+      cachedir <- cache_root
+    }
+  }
 
-    # Check if registry and fitted models are congruent
-    registry$full_paths <- file.path(cachedir, registry$relative_paths)
-    cat('Recheck of existing fits convergence\n')
-    isconverged <- future.apply::future_vapply(registry$full_paths,
-                                               function(x) {
-                                                 if (file.exists(x)) {
-                                                   m <- qs2::qs_read(x, nthreads = 1)
-                                                   if (m$converged) {return(1)} else {return(2)}
-                                                 } else {return(404)
-                                                 }},
-                                               FUN.VALUE = numeric(1))
-    cat('Of', length(registry$fitted), 'voxels:',
-        sum(registry$fitted),   'were fitted,',
-        sum(isconverged == 1),  'converged,',
-        sum(isconverged == 2),  'did not, and',
-        sum(isconverged == 404),'went missing. \n')
-    registry$fitted <- isconverged == 1
+  if (!is.null(registry)) {
+    cat('Cache directory and registry found. Resuming from', cachedir, '\n')
+    logdir      <- file.path(cachedir, '.voxlog')
+    voxfits_dir <- file.path(cachedir, '.voxfits')
+    registry$fitted <- registry$fitted & file.exists(file.path(cachedir, registry$shard))
+    registry <- recover_shards(registry, cachedir) # voxels finished after the last registry save
+    if (retry_failed) { registry$fitted[registry$status %in% c('error', 'nonconverged')] <- FALSE }
+    report_registry(registry)
 
   } else {
-    # Flag that this is a new cache created in this run
-    is_new_cache <- TRUE
+    owned_cache <- TRUE
 
     # Make main cache folder
     fit_rand_id <- rand_names(1, l=4)
@@ -203,34 +209,43 @@ vbgamlss <- function(imageframe,
     logdir <- file.path(cachedir, '.voxlog')
     dir.create(logdir, recursive = T, showWarnings = F)
 
-    # Make cache subfolder for voxfits
-    voxfits_subdir_name <- '.voxfits'
-    voxfits_subdir_path <- file.path(cachedir, voxfits_subdir_name)
-    dir.create(voxfits_subdir_path, recursive = T, showWarnings = F)
+    # Shards: one append-only file per worker process, see append_shard()
+    voxfits_dir <- file.path(cachedir, '.voxfits')
+    dir.create(voxfits_dir, recursive = T, showWarnings = F)
 
-    # Make registry
-    registry <- data.frame(voxel            = 1:nvox,
-                           fitted           = logical(nvox),
-                           converged        = logical(nvox),
-                           relative_paths   = file.path(voxfits_subdir_name,
-                                                        paste0(".vbgamlss.voxel.", 1:nvox)),
-                           full_paths       = file.path(voxfits_subdir_path,
-                                                        paste0(".vbgamlss.voxel.", 1:nvox)),
+    # Make registry. fitted = attempted; status: ok / warned / nonconverged / error / too_few_obs
+    # shard/offset/nbytes: where the voxel model sits in its shard (shard relative to cachedir)
+    registry <- data.frame(voxel     = 1:nvox,
+                           fitted    = logical(nvox),
+                           converged = logical(nvox),
+                           status    = NA_character_,
+                           message   = NA_character_,
+                           shard     = NA_character_,
+                           offset    = NA_real_,
+                           nbytes    = NA_real_,
                            stringsAsFactors = FALSE)
 
-    # Update registry_path to the new subfolder and save
     registry_path <- file.path(cachedir, '.vbgamlss.registry')
     qs2::qs_save(registry, registry_path)
     cat(paste0('Cache directory created: ', cachedir, '\n'))
   }
+
+  # New shard files on every call: never append after a tail a killed job left half-written
+  run_token <- paste0(Sys.getpid(), '.', as.integer(Sys.time()))
 
 
 
   # ---------------------------------------------------------
   # LARGE IMAGE CHUNKING & PREPPING ROUTINE
 
-  # Parse formula ONCE outside the loop
+  # Parse formula ONCE. Its environment would otherwise be this whole frame (voxeldata included),
+  # serialized to every worker together with the formula.
   g_form_parsed <- as.formula(g.formula)
+  environment(g_form_parsed) <- globalenv()
+
+  # Workers get the covariates once, and only those the formula uses
+  tdata <- train.data[, intersect(all.vars(g_form_parsed), names(train.data)), drop = FALSE]
+  rm(train.data)
 
   # Compute chunk size
   Nchunks <- estimate_nchunks(voxeldata, chunk_max_Mb=chunk_max_mb)
@@ -251,6 +266,7 @@ vbgamlss <- function(imageframe,
     registry_rows <- match(ichunk, registry$voxel)
     is_unfitted   <- registry$fitted[registry_rows] %in% FALSE
     ichunk        <- ichunk[is_unfitted]
+    registry_rows <- registry_rows[is_unfitted]
 
     # If the entire chunk is already fitted, skip to the next chunk immediately
     if (length(ichunk) == 0) {
@@ -258,77 +274,22 @@ vbgamlss <- function(imageframe,
       next
     }
 
-    # Subset datasets with chunk indexes
-    voxeldata_chunked <- voxeldata[, ichunk, drop = FALSE] # sub x vxl
-    registry_chunked  <- registry[ichunk, , drop = FALSE] # vxl x [voxel, fitted, relative_paths, full_paths]
-    if (!is.null(segmentation))
-    {voxelseg_chunked <- segmentation[, ichunk, drop = FALSE]} # 1 x vxl
-
-
-    # ---------------------------------------------------------
-    # VOXEL PREPROCESSING
-
-    # Internal function for preparing voxel for fitting
-    prep_func <- function(idvxl) {
-      # Registry for voxel
-      vxl_reg_entry <- as.list(registry_chunked[idvxl, ])
-
-      # Prepare voxel data
-      Y_vxl     <- as.numeric(voxeldata_chunked[, idvxl])
-      valid_idx <- rep(TRUE, length(Y_vxl))
-
-      if (!is.null(force_constraints)) {
-        valid_idx <- valid_idx & !is.na(Y_vxl) &
-          (Y_vxl >= force_constraints[1]) &
-          (Y_vxl <= force_constraints[2])
-        # disrespectfully crash everything if constrains are exaggerated
-        if (sum(valid_idx) < 5) {
-          stop(paste0('force_constraints left less than 5 observations for voxel ',
-                      vxl_reg_entry$voxel))
-        }
-      }
-
-      # propagate indexes to segmentation
-      if (!is.null(segmentation) && !is.null(segmentation_target)) {
-        valid_idx <- valid_idx & (voxelseg_chunked[, idvxl] == segmentation_target)
-      }
-
-      # Subset data vectors matching the exact rows kept
-      vxl_train_data   <- train.data[valid_idx, , drop = FALSE]
-      vxl_train_data$Y <- Y_vxl[valid_idx]
-      vxl_warm_start <- NULL
-      if (!is.null(warm_start)) {
-        vxl_warm_start <- warm_start[valid_idx, ]
-      }
-
-      # Return only what the worker needs
-      list(
-        vxlcol         = vxl_reg_entry$voxel,
-        data           = vxl_train_data,
-        start_params   = vxl_warm_start,
-        registry_entry = vxl_reg_entry
-      )
-    }
-
-    # Prepare input list for each voxel
-    prepared_voxel_data <- future.apply::future_lapply(seq_along(ichunk), prep_func)
-
-    # Clean up chunk matrices to free memory before parallel execution
-    rm(voxeldata_chunked)
-    rm(registry_chunked)
-    if (!is.null(segmentation)) rm(voxelseg_chunked)
-    gc()
+    # One small item per voxel, so each worker receives only its own voxels
+    items <- lapply(seq_along(ichunk), function(j) {
+      list(voxel = ichunk[j],
+           y     = voxeldata[, ichunk[j]],
+           seg   = if (!is.null(segmentation)) segmentation[, ichunk[j]])
+    })
 
 
     # ---------------------------------------------------------
     # PARALLEL PROCESSING ROUTINE
 
     # Track progress per chunk
-    if (show_progress) { p <- progressr::progressor(length(prepared_voxel_data)) }
+    if (show_progress) { p <- progressr::progressor(length(items)) }
 
-    # Parallel chunk loop iterating over the prepared list
     cat('Processing ', length(ichunk), ' voxels of', nvox,'\n')
-    submodels <- foreach::foreach(vxl_item = prepared_voxel_data,
+    submodels <- foreach::foreach(vxl_item = items,
                                   .options.future = future.opt)  %dofuture% {
 
                                     # WORKER THREAD CONTROL
@@ -337,73 +298,96 @@ vbgamlss <- function(imageframe,
                                     if (RhpcBLASctl::omp_get_num_procs() > 1L)
                                           {RhpcBLASctl::omp_set_num_threads(1L)}
 
-                                    registry_entry <- vxl_item$registry_entry
-                                    vxlcol         <- registry_entry$voxel
-
+                                    vxlcol  <- vxl_item$voxel
                                     logfile <- NULL
                                     if (!is.null(logdir))
                                           {logfile <- file.path(logdir, paste0('log.vxl', vxlcol))}
 
-                                    # GAMLSS fit using pre-assembled data
-                                    g <- TRY(gamlss2::gamlss2(formula = g_form_parsed,
-                                                              data    = vxl_item$data,
-                                                              family  = g.family,
-                                                              start   = vxl_item$start_params,
-                                                              maxit   = maxit,
-                                                              control = gamlss2::gamlss2_control(trace = FALSE,
-                                                                                                 light = TRUE,
-                                                                                                 eps  = eps),
-                                                              ...),
-                                             logfile, save.env.and.stop = F)
+                                    # Observations kept for this voxel
+                                    Y_vxl <- as.numeric(vxl_item$y)
+                                    valid <- !is.na(Y_vxl)
+                                    if (!is.null(force_constraints)) {
+                                      valid <- valid & Y_vxl >= force_constraints[1] & Y_vxl <= force_constraints[2]
+                                    }
+                                    if (!is.null(vxl_item$seg) && !is.null(segmentation_target)) {
+                                      valid <- valid & (vxl_item$seg %in% segmentation_target)
+                                    }
+
+                                    # GAMLSS fit
+                                    if (sum(valid) < 5) {
+                                      fit    <- list(value = NA, warnings = character(0),
+                                                     error = paste0('fewer than 5 valid observations (', sum(valid), ')'))
+                                      status <- 'too_few_obs'
+                                    } else {
+                                      vxl_data   <- tdata[valid, , drop = FALSE]
+                                      vxl_data$Y <- Y_vxl[valid]
+                                      fit <- TRY(gamlss2::gamlss2(formula = g_form_parsed,
+                                                                  data    = vxl_data,
+                                                                  family  = g.family,
+                                                                  start   = if (!is.null(warm_start)) warm_start[valid, ],
+                                                                  maxit   = maxit,
+                                                                  control = gamlss2::gamlss2_control(trace = FALSE,
+                                                                                                     light = TRUE,
+                                                                                                     eps  = eps),
+                                                                  ...),
+                                                 logfile)
+                                      status <- if (!is.null(fit$error)) 'error'
+                                                else if (fit$value$iterations >= maxit[1L]) 'nonconverged'
+                                                else if (length(fit$warnings) > 0) 'warned'
+                                                else 'ok'
+                                    }
+                                    msg <- if (!is.null(fit$error)) fit$error
+                                           else if (length(fit$warnings) > 0) paste(fit$warnings, collapse = ' | ')
+                                           else NA_character_
 
                                     if (show_progress) { p() }
 
-                                    # Error handling and deep environment stripping
-                                    error = FALSE
-                                    if (identical(g, NA)) {
-                                      error <- TRUE
-                                      g     <- list(vxl = vxlcol, error = TRUE, converged = F)
-
+                                    if (status %in% c('error', 'too_few_obs')) {
+                                      g <- list(vxl = vxlcol, error = TRUE, converged = F, status = status, message = msg)
                                     } else {
                                       # Good fit, strip extras
+                                      g <- fit$value
+                                      # SEs of the linear coefficients for eb_shrink(): vcov() needs the data, only available here
+                                      g$se_linear <- tryCatch(suppressWarnings(stats::vcov(g, type = "se")), error = function(e) NULL)
                                       g$control      <- NULL
                                       g$converged    <- g$iterations < maxit[1L]
                                       g$family       <- g$family$family
                                       g$vxl          <- vxlcol
+                                      g$status       <- status
+                                      g$message      <- msg
                                       if (deep_stripping){
                                         g <- deep_env_stripping(g)}
                                     }
-
-                                    # Save on disk to unload master
-                                    qs2::qs_save(g, registry_entry$full_paths)
-                                    registry_entry$converged <- g$converged
-                                    registry_entry$fitted    <- T
-
-                                    # But if error
-                                    if (error){
-                                      registry_entry$converged <- F
-                                      registry_entry$fitted    <- F
+                                    # Everything the fit had, so a fit that was not clean can be replayed alone, see refit_voxel()
+                                    # ponytail: adds ~nsub x covariates doubles per such voxel; make optional if many warn
+                                    if (status %in% c('warned', 'nonconverged', 'error')) {
+                                      g$debug_call <- list(formula = g_form_parsed, data = vxl_data, family = g.family,
+                                                           start = if (!is.null(warm_start)) warm_start[valid, ],
+                                                           maxit = maxit,
+                                                           control = list(trace = FALSE, light = TRUE, eps = eps),
+                                                           dots = list(...))
                                     }
 
-                                    # Return registry entry
-                                    return(registry_entry)
+                                    # Append to this worker's shard to unload master
+                                    shard <- paste0('shard.', run_token, '.', Sys.getpid(), '.bin')
+                                    loc   <- append_shard(file.path(voxfits_dir, shard), vxlcol, qs2::qs_serialize(g))
 
-                                    # End parallel loop
+                                    list(voxel = vxlcol, converged = isTRUE(g$converged),
+                                         status = status, message = msg,
+                                         shard = file.path('.voxfits', shard), offset = loc[1], nbytes = loc[2])
                                   }
-    # End chunking routine
+    rm(items)
     gc()
 
-    # Update registry
-    worker_returned_entry_voxels    <- vapply(submodels, function(x) x$voxel, numeric(1))
-    worker_returned_entry_fitted    <- vapply(submodels, function(x) x$fitted, logical(1))
-    worker_returned_entry_converged <- vapply(submodels, function(x) x$converged, logical(1))
-
     # Update the master registry in place
-    match_idx <- match(worker_returned_entry_voxels, registry$voxel)
-    registry$fitted[match_idx]    <- worker_returned_entry_fitted
-    registry$converged[match_idx] <- worker_returned_entry_converged
-
-    # Save the updated master registry
+    match_idx <- match(vapply(submodels, function(x) x$voxel, numeric(1)), registry$voxel)
+    registry$fitted[match_idx]    <- TRUE
+    registry$converged[match_idx] <- vapply(submodels, function(x) x$converged, logical(1))
+    registry$status[match_idx]    <- vapply(submodels, function(x) x$status, character(1))
+    registry$message[match_idx]   <- vapply(submodels, function(x) x$message, character(1))
+    registry$shard[match_idx]     <- vapply(submodels, function(x) x$shard, character(1))
+    registry$offset[match_idx]    <- vapply(submodels, function(x) x$offset, numeric(1))
+    registry$nbytes[match_idx]    <- vapply(submodels, function(x) x$nbytes, numeric(1))
     qs2::qs_save(registry, registry_path)
 
     gc()
@@ -421,38 +405,26 @@ vbgamlss <- function(imageframe,
   if (RhpcBLASctl::omp_get_num_procs() != master_omp)
         {RhpcBLASctl::omp_set_num_threads(master_omp)}
 
-
-  # Report of success
-  isconverged <- future.apply::future_vapply(registry$full_paths,
-                                             function(x) {
-                                               if (file.exists(x)) {
-                                                 m <- qs2::qs_read(x, nthreads = 1)
-                                                 if (m$converged) {return(1)} else {return(2)}
-                                               } else {return(404)
-                                               }},
-                                             FUN.VALUE = numeric(1))
-  cat('\nOf', length(registry$fitted), 'voxels:',
-      sum(registry$fitted),   'were fitted,',
-      sum(isconverged == 1),  'converged,',
-      sum(isconverged == 2),  'did not, and',
-      sum(isconverged == 404),'went missing. \n')
-  registry$fitted <- isconverged == 1
-  # Final registry update
-  qs2::qs_save(registry, registry_path)
+  cat('\n'); report_registry(registry)
 
   # Aggregating
   cat("Aggregating individual voxel models\n")
-  agg.start.time <- Sys.time()
   models <- vector("list", nvox)
 
-  for (i in seq_along(registry$full_paths)) {
-    # read as raw bytes
-    f_size <- file.info(registry$full_paths[i])$size
-    models[[i]] <- readBin(registry$full_paths[i], what = "raw", n = f_size)
-    # Release memory or OOM
-    if (i %% 1e4 == 0 || i == nvox) {gc(verbose = FALSE)}
+  # raw bytes, read shard by shard in file order
+  done <- which(registry$fitted)
+  for (sh in unique(registry$shard[done])) {
+    rows <- done[registry$shard[done] == sh]
+    rows <- rows[order(registry$offset[rows])]
+    con  <- file(file.path(cachedir, sh), "rb")
+    for (r in rows) {
+      seek(con, registry$offset[r] + SHARD_HEADER_BYTES)
+      models[[r]] <- readBin(con, what = "raw", n = registry$nbytes[r])
+    }
+    close(con)
+    gc(verbose = FALSE)
   }
-  models <- structure(models, class = "vbgamlss")
+  models <- structure(models, class = "vbgamlss", cachedir = cachedir)
 
 
   # Save
@@ -466,7 +438,7 @@ vbgamlss <- function(imageframe,
 
   # Cleanup
   if (!debug) {
-    if (is_new_cache &&                                                         # is newly made, so not passed?
+    if (owned_cache &&                                                          # made or found by vbgamlss, not passed in
         grepl("\\.vbgamlss\\.cache", cachedir) &&                               # is names .vbgamlss.cache
         normalizePath(cachedir, mustWork = FALSE) != normalizePath(getwd(),     # is the path != from pwd?
                                                                    mustWork = FALSE)) {
@@ -499,8 +471,116 @@ deep_env_stripping <- function(model) {
   if (!is.null(target_env) && !identical(target_env, globalenv()) && !identical(target_env, baseenv())) {
     rm(list = ls(envir = target_env, all.names = TRUE), envir = target_env)
   }
+  # gamlss2 also pins the frame it was called from (the worker's) on the terms list
+  if (!is.null(attr(model$terms, ".Environment"))) {
+    attr(model$terms, ".Environment") <- globalenv()
+  }
 
   return(model)
+}
+
+
+
+# Per-status voxel counts of a vbgamlss registry
+report_registry <- function(registry) {
+  st <- ifelse(registry$fitted, registry$status, 'pending')
+  st <- table(factor(st, levels = c('ok', 'warned', 'nonconverged', 'error', 'too_few_obs', 'pending')))
+  cat('Of', nrow(registry), 'voxels:', paste(names(st), st, sep = '=', collapse = ', '), '\n')
+  errs <- registry$message[registry$fitted & registry$status %in% c('error', 'too_few_obs')]
+  if (length(errs) > 0) {
+    top <- sort(table(errs), decreasing = TRUE)[1:min(3, length(unique(errs)))]
+    cat('\t most frequent failures:\n', paste0('\t   ', names(top), ' (', top, ')\n'), sep = '')
+  }
+}
+
+
+
+# Shard record: [magic | voxel | nbytes] as 4-byte integers, then nbytes of qs2-serialized model.
+# Each worker process appends to its own file, so a file never has two writers.
+SHARD_MAGIC <- 1447249713L # "VBG1"
+SHARD_HEADER_BYTES <- 12
+
+# Append one voxel model; returns c(offset of the record, nbytes of the model)
+append_shard <- function(path, voxel, bytes) {
+  offset <- if (file.exists(path)) file.size(path) else 0
+  con <- file(path, "ab")
+  on.exit(close(con))
+  writeBin(c(SHARD_MAGIC, as.integer(voxel), length(bytes)), con, size = 4)
+  writeBin(bytes, con)
+  c(offset, length(bytes))
+}
+
+# Index of the complete records in a shard; stops at a truncated or corrupt tail
+scan_shard <- function(path) {
+  size <- file.size(path)
+  con  <- file(path, "rb")
+  on.exit(close(con))
+  vox <- integer(0); off <- numeric(0); nb <- numeric(0); pos <- 0
+  while (pos + SHARD_HEADER_BYTES <= size) {
+    h <- readBin(con, "integer", n = 3, size = 4)
+    if (length(h) < 3 || h[1] != SHARD_MAGIC || pos + SHARD_HEADER_BYTES + h[3] > size) break
+    vox <- c(vox, h[2]); off <- c(off, pos); nb <- c(nb, h[3])
+    pos <- pos + SHARD_HEADER_BYTES + h[3]
+    seek(con, pos)
+  }
+  data.frame(voxel = vox, offset = off, nbytes = nb)
+}
+
+# Register voxels that are complete in the shards but missing from the registry
+# (fitted after its last save, e.g. the job was killed mid-chunk)
+recover_shards <- function(registry, cachedir) {
+  shards <- list.files(file.path(cachedir, '.voxfits'), pattern = '^shard\\..*\\.bin$')
+  n_rec <- 0
+  for (sh in shards) {
+    idx <- scan_shard(file.path(cachedir, '.voxfits', sh))
+    idx <- idx[idx$voxel %in% registry$voxel[!registry$fitted], , drop = FALSE]
+    if (nrow(idx) == 0) next
+    con <- file(file.path(cachedir, '.voxfits', sh), "rb")
+    for (k in seq_len(nrow(idx))) {
+      seek(con, idx$offset[k] + SHARD_HEADER_BYTES)
+      g <- qs2::qs_deserialize(readBin(con, what = "raw", n = idx$nbytes[k]))
+      r <- match(idx$voxel[k], registry$voxel)
+      registry[r, c('shard', 'offset', 'nbytes')] <- list(file.path('.voxfits', sh), idx$offset[k], idx$nbytes[k])
+      registry$fitted[r]    <- TRUE
+      registry$converged[r] <- isTRUE(g$converged)
+      registry$status[r]    <- if (is.null(g$status)) NA_character_ else g$status
+      registry$message[r]   <- if (is.null(g$message)) NA_character_ else g$message
+      n_rec <- n_rec + 1
+    }
+    close(con)
+  }
+  if (n_rec > 0) { cat('Recovered', n_rec, 'voxels from shards that the registry had not recorded yet\n') }
+  registry
+}
+
+
+
+#' Replay the fit of one voxel alone, e.g. to debug a fit that failed, warned or did not converge
+#'
+#' Every voxel whose status is warned/nonconverged/error stores `$debug_call`: the exact data,
+#' formula, family, start, maxit, control and extra arguments its gamlss2 fit received.
+#' @param models A vbgamlss model.
+#' @param i Voxel index.
+#' @param ... Override any stored argument, e.g. `control = list(trace = TRUE)` (merged into the
+#'   stored control), `maxit = c(300, 50)`, `family = SHASH`.
+#' @return The gamlss2 fit (errors are not caught, so traceback() works).
+#' @export
+refit_voxel <- function(models, i, ...) {
+  a <- models[[i]]$debug_call
+  if (is.null(a)) { stop('voxel ', i, ' (status: ', models[[i]]$status, ') has no debug_call, only warned/nonconverged/error fits keep it') }
+  over <- list(...)
+  if (!is.null(over$control)) { a$control <- utils::modifyList(a$control, over$control); over$control <- NULL }
+  args <- c(list(formula = a$formula, data = a$data, family = a$family, start = a$start, maxit = a$maxit,
+                 control = do.call(gamlss2::gamlss2_control, a$control)), a$dots)
+  do.call(gamlss2::gamlss2, utils::modifyList(args, over, keep.null = TRUE))
+}
+
+
+
+# Delete a model's voxel cache once the aggregated model is safely on disk
+drop_vbgamlss_cache <- function(model) {
+  cdir <- attr(model, "cachedir")
+  if (!is.null(cdir) && grepl("\\.vbgamlss\\.cache", basename(cdir))) { unlink(cdir, recursive = TRUE) }
 }
 
 

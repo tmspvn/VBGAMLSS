@@ -22,6 +22,8 @@ vbgamlss.model_selection_NCV <- function(# model selection commands
   fold.var, # outer LOBO variable (e.g. batch/site), see LOSOfolds()
   k_inner = 5, # number of inner stratified CV folds run within each outer (LOBO) training set
   drop_re = T, # drop random/batch effects when predicting the held-out outer batch
+  calib_k = 0, # >1: score the held-out batch after calibrating its REs (conditional MLE, cross-fitted)
+  calib_seed = 1,
   images,  # pass named list of paths
   constraints, # pass named list of numeric vectors
   mask,
@@ -168,6 +170,8 @@ vbgamlss.model_selection_NCV <- function(# model selection commands
                                               fold.var          = fold.var,
                                               k_inner           = k_inner,
                                               drop_re           = drop_re,
+                                              calib_k           = calib_k,
+                                              calib_seed        = calib_seed,
                                               g.family          = g.family,
                                               segmentation      = segmentation,
                                               chunk_max_mb      = chunk_max_mb,
@@ -235,6 +239,8 @@ vbgamlss.model_selection_NCV <- function(# model selection commands
   # Gather the results
   cat(paste0('gathering results\n'))
   results <- gather_jobs_outputs(registry, keep_all_GD = keep_all_GD)
+  # which image / family / formula each result belongs to, so ncv_folds() needs no registry
+  attr(results, "jobs") <- data.frame(formula = registry$formula, image = registry$image, family = registry$family)
 
   # Extra, disposable: a rank-based composite ranking across candidate formulas,
   # combining the outer LOBO (between-batch) and inner CV (within-distribution)

@@ -99,7 +99,7 @@ predict.vbgamlss <- function(object,
   }
 
   # Extract family object for workers
-  familyobj <- restore_family(object[[1]])$family
+  familyobj <- restore_family(first_fitted(object))$family
   fname <- familyobj$family
 
   # Prepare for parallelization
@@ -325,146 +325,134 @@ zscore.vbgamlss <- function(predictions, yimageframe, num_cores=NULL){
 
 
 # ------------------------------------
-#' Apply kernel james-stein shrinkage to intercept coefficients of a vbgamlss
+#' Empirical-Bayes spatial shrinkage of voxel-wise linear coefficients (post hoc)
 #'
+#' Takes a fitted vbgamlss model and returns a shrunk copy; the input is left untouched.
+#' For every voxel v and linear coefficient (e.g. mu intercept, sexM) with estimate b_v and
+#' standard error s_v (stored at fit time by vbgamlss, `$se_linear`), a local prior g_v is fitted
+#' with ebnm (marginal maximum likelihood, mode estimated) on the OTHER mask voxels in a
+#' kernel_size^3 cube around v, and b_v is replaced by its posterior mean under g_v. Noisy voxels
+#' are pulled towards their neighbourhood; with an adaptive prior (default "point_laplace") large,
+#' well-measured departures (e.g. at tract boundaries) are kept. Smooth (e.g. pb) and random-effect
+#' terms are left as fitted.
+#'
+#' @param object A fitted vbgamlss model.
+#' @param mask The mask used to build the imageframe (path, antsImage or 3D array); it defines the voxel order.
+#' @param params Distribution parameters whose linear coefficients are shrunk. Default "mu"; shrinking
+#'   sigma/nu/tau changes the predicted spread, so re-check z-score calibration.
+#' @param prior_family Any ebnm prior family: "point_laplace" (default, adaptive, ~16 ms per voxel and
+#'   coefficient), "normal" (classic normal-normal EB, ~7 ms), "normal_scale_mixture" (ash, ~130 ms), ...
+#' @param kernel_size Odd side of the cubic kernel in voxels (5 = 5x5x5).
+#' @param min_neighbors Voxels with fewer valid neighbours in the kernel are left unshrunk.
+#' @param num_cores Cores (forked) for the per-voxel prior fits and for re-writing the voxel models.
+#' @param save_model Optional path; saved as <save_model>.vbgamlss.
+#' @return The shrunk vbgamlss copy. Each changed voxel model gains `$eb_shrink` (original, posterior_sd,
+#'   prior_mode per coefficient); attribute "eb_shrink" summarises the shift towards the prior mode.
 #' @export
-james_stein <- function(object,
-                        mask,
-                        yimageframe,
-                        save_model=NULL,
-                        radius_voxels=4,
-                        num_cores=NULL){
+eb_shrink <- function(object, mask, params = "mu", prior_family = "point_laplace", kernel_size = 5,
+                      min_neighbors = 10, num_cores = 1L, save_model = NULL) {
 
-  # Internal
-  JS <- function(theta_hat, sigma2) {
-    N <- length(theta_hat)
-    theta_bar <- mean(theta_hat)
-    # SSD sum of squared deviations
-    V <- sum((theta_hat - theta_bar)^2)
-    # c+
-    c_plus <- pmax(0, 1 - ((N - 2) * sigma2) / V)
-    # Calculate the shrunken estimates
-    theta_js <- theta_bar + c_plus * (theta_hat - theta_bar)
-    return(theta_js)
+  if (!requireNamespace("ebnm", quietly = TRUE)) stop("eb_shrink needs the ebnm package: install.packages('ebnm')")
+  if (kernel_size %% 2 != 1) stop("kernel_size must be odd")
+  if (is.character(mask)) mask <- ANTsR::antsImageRead(mask)
+  mask_arr <- as.array(mask) > 0
+  coords <- which(mask_arr, arr.ind = TRUE) # same voxel order as images2matrix()
+  nvox <- length(object)
+  if (nrow(coords) != nvox) stop("mask has ", nrow(coords), " voxels, the model has ", nvox)
+
+  # 1. estimates and standard errors (one read per voxel)
+  cat("Reading coefficients and standard errors\n")
+  est <- pbmcapply::pbmclapply(seq_len(nvox), function(i) {
+    g <- object[[i]]
+    if (is.null(g) || isTRUE(g$error)) return(NULL)
+    if (is.null(g$se_linear)) return(NULL)
+    b  <- unlist(g$coefficients[params]) # "mu.(Intercept)", ...
+    se <- g$se_linear
+    names(se) <- sub(".p.", ".", names(se), fixed = TRUE) # "mu.p.(Intercept)" -> "mu.(Intercept)"
+    list(b = b, s = se[names(b)])
+  }, mc.cores = num_cores)
+  if (all(vapply(est, is.null, logical(1)))) {
+    stop("No voxel has stored standard errors ($se_linear): refit the model with this VBGAMLSS version")
   }
-
-  # checks
-  if (is.character(mask)) {
-    if (!file.exists(mask)) stop("File does not exist: ", mask)
-    mask <- antsImageRead(mask)
+  cn <- unique(unlist(lapply(est, function(e) names(e$b))))
+  B <- S <- matrix(NA_real_, nvox, length(cn), dimnames = list(NULL, cn))
+  for (i in which(!vapply(est, is.null, logical(1)))) {
+    B[i, names(est[[i]]$b)] <- est[[i]]$b
+    S[i, names(est[[i]]$s)] <- est[[i]]$s
   }
+  bad <- !is.finite(S) | S <= 0
+  B[bad] <- NA; S[bad] <- NA
+  rm(est)
 
-  # Matrix conversion for much faster column subsetting
-  if (!is.data.frame(yimageframe) && !is.matrix(yimageframe)) {
-    stop("Error: yimageframe must be a data.frame or matrix")
-  }
+  # 2. neighbours: the other mask voxels in the cube (NA outside the mask)
+  h <- (kernel_size - 1) / 2
+  offs <- as.matrix(expand.grid(-h:h, -h:h, -h:h))
+  offs <- offs[rowSums(abs(offs)) > 0, , drop = FALSE]
+  lookup <- array(0L, dim(mask_arr)); lookup[mask_arr] <- seq_len(nvox)
+  d <- dim(mask_arr)
+  nb <- matrix(vapply(seq_len(nrow(offs)), function(k) {
+    cc <- sweep(coords, 2, offs[k, ], "+")
+    inside <- cc[, 1] >= 1 & cc[, 1] <= d[1] & cc[, 2] >= 1 & cc[, 2] <= d[2] & cc[, 3] >= 1 & cc[, 3] <= d[3]
+    out <- rep(NA_integer_, nvox)
+    out[inside] <- lookup[cc[inside, , drop = FALSE]]
+    out[out == 0L] <- NA_integer_
+    out
+  }, integer(nvox)), nrow = nvox)
 
-  yimageframe <- as.matrix(yimageframe)
-  mask_array <- as.array(mask)
-  vox_coords <- which(mask_array > 0, arr.ind = TRUE)
-
-  # parallel setup
-  if (is.null(num_cores)) {num_cores <- future::availableCores()}
-  future::plan(strategy="future::cluster", workers=num_cores)
-  options(future.globals.maxSize=10*1024^3) # 10 GB max
-
-  # Finds 'k' neighbors
-  neighbors <- dbscan::kNN(vox_coords, k = round(4.188 *(radius_voxels^3)))$id
-
-  # ----------------------------------------------------------------------------
-  # Must loop like this otherwise it copies the whole model a ton of times
-  nvox <- dim(neighbors)[1]
-  all_voxels_js_coefs <- vector("list", nvox)
-
-  # Per voxel do:
-  for (vxl in 1:nvox) {
-
-    kernel_idx <- neighbors[vxl,]
-    # Extract ONLY the raw bytes for the subset of voxel for the kernel
-    kernel_mods <- lapply(kernel_idx, function(idx) .subset2(object, idx))
-    kernel_y <- yimageframe[, kernel_idx]
-
-    # parallelise extraction
-    kernel_coefs <- future.apply::future_lapply(seq_along(kernel_mods), function(k) {
-
-      # Grab the raw bytes for this specific worker
-      raw_data <- kernel_mods[[k]]
-      # Explicitly deserialize inside the worker
-      if (is.null(raw_data)) return(NA)
-      vxlgamlss <- qs2::qs_deserialize(raw_data)
-
-      # get error
-      e <- kernel_y[, k] - predict(vxlgamlss, type = "response")
-
-      # extract coefficients
-      vxlcoefs <- unlist(coef(vxlgamlss))
-      vxlcoefs['var.err'] <-  var(e)
-
-      # return coefficients
-      vxlcoefs
-
-    })
-
-    # bind output
-    kernel_coefs <- as.data.frame(do.call(rbind, kernel_coefs))
-
-    # compute James-stein shrinkage
-    sigma2_noise <- kernel_coefs[['var.err']]
-    kernel_coefs[["var.err"]] <- NULL
-
-    vxl_js_matrix <- apply(kernel_coefs, 2, function(x) JS(x, sigma2_noise))
-    vxl_js <- vxl_js_matrix[1, ]
-
-    # store
-    all_voxels_js_coefs[[vxl]] <- vxl_js
-
-    cat("Voxel", vxl, 'of', nvox, fill = TRUE)
-    flush.console()
-  }
-
-  # bind output again
-  all_voxels_js_coefs <- as.data.frame(do.call(rbind, all_voxels_js_coefs))
-  coefs_names <- names(all_voxels_js_coefs)
-
-  # ----------------------------------------------------------------------------
-  # Loop again to assign the new shrieked coefficients
-  for (vxl in 1:nvox) {
-
-    # Subset and deserialize
-    new_coef <- all_voxels_js_coefs[vxl,]
-    raw_data <- .subset2(object, vxl)
-    if (is.null(raw_data)) next
-
-    vxlgamlss <- qs2::qs_deserialize(raw_data)
-
-    # Map values back to the internal vxlgamlss structure
-    for (par in names(vxlgamlss$coefficients)) {
-      # Identify indices belonging to this parameter
-      pattern <- paste0("^", par, "\\.")
-      par_vals <- new_coef[grep(pattern, names(new_coef))]
-      # Remove the "mu." prefix so names match internal (Intercept), sexM, etc.
-      names(par_vals) <- gsub(pattern, "", names(par_vals))
-      # Assign back to the model object
-      vxlgamlss$coefficients[[par]] <- par_vals
+  # 3. local empirical-Bayes shrinkage with ebnm: prior fitted on the neighbours, posterior for the voxel
+  cat("Fitting local", prior_family, "priors\n")
+  post <- pbmcapply::pbmclapply(seq_len(nvox), function(v) {
+    res <- matrix(NA_real_, 3, length(cn), dimnames = list(c("mean", "sd", "mode"), cn))
+    for (j in cn) {
+      if (is.na(B[v, j])) next
+      idx <- nb[v, ]
+      idx <- idx[!is.na(idx) & !is.na(B[idx, j])]
+      if (length(idx) < min_neighbors) next
+      res[, j] <- tryCatch({
+        g <- ebnm::ebnm(B[idx, j], S[idx, j], prior_family = prior_family, mode = "estimate",
+                        output = "fitted_g")$fitted_g
+        p <- ebnm::ebnm(B[v, j], S[v, j], prior_family = prior_family, g_init = g, fix_g = TRUE,
+                        output = c("posterior_mean", "posterior_sd"))$posterior
+        c(p$mean, p$sd, g$mean[1])
+      }, error = function(e) rep(NA_real_, 3)) # failed prior fit: voxel left unshrunk
     }
-
-    # reserialize and replace
-    object[[vxl]] <- qs2::qs_serialize(vxlgamlss)
-
-    cat("Voxel", vxl, 'of', nvox, fill = TRUE)
-    flush.console()
+    res
+  }, mc.cores = num_cores)
+  newB <- B
+  PSD <- MODE <- B * NA
+  for (v in seq_len(nvox)) {
+    ok <- !is.na(post[[v]]["mean", ])
+    newB[v, ok] <- post[[v]]["mean", ok]; PSD[v, ok] <- post[[v]]["sd", ok]; MODE[v, ok] <- post[[v]]["mode", ok]
   }
+  rm(post)
+  L <- 1 - (newB - MODE) / (B - MODE) # fraction of the way to the prior mode (0 = kept, 1 = fully shrunk)
 
-  # Done save model back
+  # 4. write the shrunk coefficients into a copy of the model
+  changed <- which(rowSums(!is.na(PSD)) > 0)
+  cat("Writing", length(changed), "of", nvox, "voxel models\n")
+  raws <- pbmcapply::pbmclapply(changed, function(i) {
+    g <- qs2::qs_deserialize(.subset2(object, i)) # stored form, no restore_family
+    for (p in params) {
+      nm <- names(g$coefficients[[p]])
+      v  <- newB[i, paste0(p, ".", nm)]
+      g$coefficients[[p]][nm[!is.na(v)]] <- v[!is.na(v)]
+    }
+    g$eb_shrink <- list(original = B[i, ], posterior_sd = PSD[i, ], prior_mode = MODE[i, ], prior_family = prior_family)
+    qs2::qs_serialize(g)
+  }, mc.cores = num_cores)
+  out <- object
+  for (k in seq_along(changed)) out[[changed[k]]] <- raws[[k]]
+  attr(out, "eb_shrink") <- list(params = params, prior_family = prior_family, kernel_size = kernel_size,
+                                 min_neighbors = min_neighbors, n_shrunk = length(changed),
+                                 shrink_fraction = apply(L, 2, stats::quantile, c(.05, .25, .5, .75, .95), na.rm = TRUE))
+  cat("Fraction of the way to the local prior mode (0 = kept, 1 = fully shrunk):\n")
+  print(round(attr(out, "eb_shrink")$shrink_fraction, 3))
+
   if (!is.null(save_model)) {
-    qs2::qs_save(object, # FIXED: Save 'object', not undefined 'models'
-                 file = paste0(save_model, '.JS.vbgamlss'),
-                 compress_level = 0L) # uncompressed
-    cat('Model saved: ', paste0(save_model, '.JS.vbgamlss'), '\n')
-    return(NULL)
-  } else {
-    return(object)
+    qs2::qs_save(out, file = paste0(save_model, ".vbgamlss"), compress_level = 0L)
+    cat("Model saved: ", paste0(save_model, ".vbgamlss"), "\n")
   }
+  out
 }
 
 
@@ -541,7 +529,7 @@ james_stein <- function(object,
 #'   }
 #'
 #'   # record fam obj if missing
-#'   familyobj <- restore_family(object[[1]])$family
+#'   familyobj <- restore_family(first_fitted(object))$family
 #'   fname <- familyobj$family
 #'
 #'   # compute chunk size

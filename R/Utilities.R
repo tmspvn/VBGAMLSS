@@ -93,13 +93,23 @@ load_input_image <- function(image, mask=NULL){
 
 
 
+# First voxel model that was actually fitted (failed voxels are placeholders without family/terms)
+first_fitted <- function(object) {
+  for (i in seq_along(object)) {
+    g <- object[[i]]
+    if (!is.null(g) && !isTRUE(g$error)) return(g)
+  }
+  stop("no successfully fitted voxel in the model")
+}
+
+
 #' Wrapper to reassign removed family() object from a vbgamlss fitted submodel
 #'
 #' @param fitted, vbgamlss fitted submodel,
 #' @return vbgamlss fitted submodel with family object included.
 #' @export
 restore_family <- function(fitted){
-  if (class(fitted$family) != "gamlss2.family"){
+  if (!is.null(fitted$family) && !inherits(fitted$family, "gamlss2.family")){ # failed-voxel placeholders have no family
     fitted$family <- gamlss2:::complete_family(fitted$family)
   }
   return(fitted)
@@ -262,31 +272,28 @@ check_formula_LHS <- function(formula) {
 
 
 
-TRY <- function(expr, logfile=NULL, save.env.and.stop=F){
-  res <-tryCatch(expr={expr},
-                  error = function(e) {
-                   if (!is.null(logfile)){
-                     cat(paste('ERROR:\n\n', e$message), "\n\n",
-                         file = logfile, append = TRUE)
-                     if (save.env.and.stop) {
-                       save(list = ls(all.names = TRUE),
-                            file = paste0(logfile, '.ERROR.local.enviroment'))
-                       stop('Stopping on first error,
-                            *save.env.and.stop* is set to TRUE')
-                         }
-                     }
-                     g <- NA # missfit
-                   },
-                  warning = function(w) {
-                    if (!is.null(logfile)){
-                      # Save the error message to a file
-                      cat(paste('WARN:\n\n', w$message), "\n\n",
-                          file = logfile, append = TRUE)
-                    }
-                    expr
-                  }
-  )
-  return(res)}
+# Evaluate expr ONCE. Warnings are logged and collected without interrupting it (a tryCatch
+# warning handler aborts expr, and re-forcing it re-runs the whole fit outside the handlers).
+# Returns list(value, warnings, error); value is NA when expr errored.
+TRY <- function(expr, logfile=NULL){
+  warns <- character(0)
+  value <- tryCatch(
+    withCallingHandlers(expr, warning = function(w) {
+      warns <<- c(warns, conditionMessage(w))
+      if (!is.null(logfile)) {
+        cat(paste('WARN:\n\n', conditionMessage(w)), "\n\n", file = logfile, append = TRUE)
+      }
+      invokeRestart("muffleWarning")
+    }),
+    error = function(e) {
+      if (!is.null(logfile)) {
+        cat(paste('ERROR:\n\n', conditionMessage(e)), "\n\n", file = logfile, append = TRUE)
+      }
+      structure(NA, error = conditionMessage(e))
+    })
+  err <- attr(value, "error")
+  list(value = if (is.null(err)) value else NA, warnings = unique(warns), error = err)
+}
 
 
 

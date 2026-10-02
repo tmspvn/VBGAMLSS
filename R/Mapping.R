@@ -26,18 +26,19 @@ map_model_coefficients <- function(fittedobj, mask, filename, return_files = FAL
   message('Warning: specific coefficients from special model terms cannot be mapped (e.g. pb(), s())')
 
   nvox <- length(fittedobj)
-  first_mod_coefs <- unlist(fittedobj[[1]]$coefficients)
+  first_mod_coefs <- unlist(first_fitted(fittedobj)$coefficients)
   name_coefs <- names(first_mod_coefs)
   ncoefs <- length(first_mod_coefs)
 
   # Build the raw coefficient matrix (link scale)
   coefs_mat <- matrix(nrow = ncoefs, ncol = nvox)
   for (i in 1:nvox) {
-    coefs_mat[,i] <- unlist(fittedobj[[i]]$coefficients)
+    co <- unlist(fittedobj[[i]]$coefficients)
+    if (!is.null(co)) coefs_mat[, i] <- co[name_coefs] # failed voxels stay empty
   }
 
   # Extract the family object to get the transformation functions
-  fam <- fittedobj[[1]]$family
+  fam <- first_fitted(fittedobj)$family
 
   # Transform ONLY the Intercept rows to the original scale
   for (i in 1:ncoefs) {
@@ -105,32 +106,27 @@ map_model_predictions <- function(obj, mask, filename, index=NULL,
 
   # prepare useful info
   nvox <- length(obj)
-  first_pred <- obj[[1]]
+  first_pred <- Find(is.list, obj) # voxel 1 may be a failed fit (NA)
   family <- first_pred$family
-  name_param <- names(first_pred)[! names(first_pred) %in% c('family', 'vxl')]
+  name_param <- names(first_pred)[! names(first_pred) %in% c('family', 'vxl', 'df')]
   nparam <- length(name_param)
   mask_img <- antsImageRead(mask, 3)
 
   # save a subset?
-  if (is.null(index)) {
-    nsubj <- length(first_pred[[name_param[1]]])
-    subj = 1:nsubj # all
-  } else {
-    nsubj = length(subj)
-    subj = index # subset
-  }
+  subj <- if (is.null(index)) seq_along(first_pred[[name_param[1]]]) else index
+  nsubj <- length(subj)
 
   # process
+  fnames <- c()
   for (pname in name_param) {
     param_mat <- matrix(nrow=nsubj, ncol=nvox)
     for (ic in 1:nvox) {
-      # voxel   #parameter  #subjects
-      param_mat[, ic] <- obj[[ic]][[pname]][subj]
+      # voxel   #parameter  #subjects; failed voxels stay empty
+      if (is.list(obj[[ic]])) param_mat[, ic] <- obj[[ic]][[pname]][subj]
     }
     # convert mat to maps & save per subj
     param_maps_images <- matrixToImages(param_mat, mask_img)
     # save files
-    fnames <- c()
     for (ip in 1:length(param_maps_images)) {
       fname <- paste0(filename,
                       '_subj-', subj[ip],
@@ -138,7 +134,7 @@ map_model_predictions <- function(obj, mask, filename, index=NULL,
                       '_par-' , toupper(pname),
                       '.nii.gz')
       antsImageWrite(param_maps_images[[ip]], fname)
-      fnames[ip] <- fname
+      fnames <- c(fnames, fname)
     }
   }
   if (return_files) {return(fnames)}

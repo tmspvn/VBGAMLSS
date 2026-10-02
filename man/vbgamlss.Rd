@@ -24,6 +24,7 @@ vbgamlss(
   future_plan_strategy = "future.mirai::mirai_cluster",
   save_model = NULL,
   deep_stripping = TRUE,
+  retry_failed = FALSE,
   ...
 )
 }

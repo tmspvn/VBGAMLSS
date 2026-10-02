@@ -160,7 +160,7 @@ vbgamlss.lobocv <- function(imageframe,
     cat('\t| Summarizing statistics', fill=T)
     stats <- statGD(GDs,
                     k.penalty,
-                    deg.fre=model[[1]]$df,
+                    deg.fre=first_fitted(model)$df,
                     return_all_GD=return_all_GD)
 
     # update and save status on the registry
@@ -239,6 +239,8 @@ predictGD <- function (object,
                        resume=T,
                        save_states=T,
                        drop_re=T,
+                       calib_folds=NULL, # per-subject split ids: cross-fitted calibration of the held-out batch REs
+                       calib_re=NULL,    # named list param -> RE grouping variables, see re_vars_by_param()
                        ...) {
 
   if (is.null(newdata)){stop("newdata is not set")}
@@ -246,7 +248,7 @@ predictGD <- function (object,
   .state.dir = loginfo[2]
 
   ## predict GD ##
-  familyobj <- restore_family(object[[1]])$family
+  familyobj <- restore_family(first_fitted(object))$family
 
   # .predicted.parameters
   fold.P.file = file.path(.state.dir, paste0('.fold.', .fold, '.predicted.parameters.qs'))
@@ -259,8 +261,8 @@ predictGD <- function (object,
     if (drop_re) {
 
       # use first model to get formula and exclude RE
-      terms_exre <- get_fixed_terms(object[[1]])
-      m <- restore_family(object[[1]])
+      terms_exre <- get_fixed_terms(first_fitted(object))
+      m <- restore_family(first_fitted(object))
       parnames <- m$family$names
 
       # make output df
@@ -322,7 +324,7 @@ predictGD <- function (object,
 
     RE_to_drop=NULL
     if (drop_re){
-      terms_exre <- get_fixed_terms(object[[1]])
+      terms_exre <- get_fixed_terms(first_fitted(object))
     }
     cat("\033[34m")
     resp <- quite(
@@ -359,6 +361,18 @@ predictGD <- function (object,
   # missfits
   not_missfits <- ! is.na(nfitted)
 
+  # RE groupings of the held-out subjects; a candidate without REs has nothing to calibrate
+  calib_groups <- NULL
+  if (!is.null(calib_folds)) {
+    # formula parts map onto the family's parameters by position, whatever they are called
+    calib_re <- setNames(calib_re[seq_along(familyobj$names)], familyobj$names)
+    calib_groups <- lapply(calib_re, function(v) if (length(v)) interaction(newdata[v], drop = TRUE))
+    calib_groups <- calib_groups[!vapply(calib_groups, is.null, logical(1))]
+    if (length(calib_groups) == 0) calib_groups <- NULL
+    quite(cat('\t| Calibrating held-out REs (', length(unique(calib_folds)), '-fold cross-fitted, params: ',
+              paste(names(calib_groups), collapse = ', '), ')', fill = T), skip = verbose)
+  }
+
   # test GD
   quite(cat('\t| Evaluating test fold GD ', fill=T), skip=verbose)
   plan(strategy="future::cluster", workers=availableCores())
@@ -367,6 +381,9 @@ predictGD <- function (object,
 
       # Wrapped in tryCatch to catch uniroot failures
       tryCatch({
+        if (!is.null(calib_groups)) {
+          nfitted[[i]] <- calibrate_heldout(nfitted[[i]], calib_folds, calib_groups, familyobj)
+        }
         vxlGD <- testGD(nfitted[[i]], familyobj)
         vxlGD$vxl <- nfitted[[i]]$vxl
         vxlGD
@@ -382,6 +399,94 @@ predictGD <- function (object,
 
   class(GDs) <- "vbgamlss.predictions.GD"
   GDs
+}
+
+
+
+# --------------------------------
+# Out-of-sample RE estimation for a held-out batch (Bethlehem et al. 2022, SI 1.8): conditional MLE
+# of per-group offsets on the link scale with the fixed effects frozen, cross-fitted over `folds` so
+# each subject is scored with offsets estimated without it. Block-coordinate 1D optimisation.
+calibrate_heldout <- function(nfit, folds, groups, familyobj, min_n = 3, sweeps = 3) {
+  # Distribution-agnostic: density, links and response all come from the gamlss2 family object
+  pars <- familyobj$names
+  linkfun <- lapply(setNames(pars, pars), function(p) gamlss2:::make.link2(familyobj$links[[p]])$linkfun)
+  eta0 <- lapply(setNames(pars, pars), function(p) linkfun[[p]](nfit[[p]]))
+  out <- eta0
+  ok <- is.finite(nfit$y)
+  nll <- function(idx, eta) {
+    v <- -sum(familyobj$pdf(nfit$y[idx], familyobj$map2par(lapply(eta, function(e) e[idx])), log = TRUE))
+    if (is.finite(v)) v else 1e300
+  }
+
+  for (k in unique(folds)) {
+    cal <- ok & folds != k
+    eta <- eta0
+    for (s in seq_len(if (length(groups) > 1) sweeps else 1)) {
+      for (p in names(groups)) {
+        for (g in levels(groups[[p]])) {
+          ing <- which(groups[[p]] == g)
+          idx <- ing[cal[ing]]
+          if (length(idx) < min_n) next # ponytail: unshrunk MLE, add a ridge from the training RE variance if small groups blow up
+          # search range on the link scale; on identity links use the residual range (response units)
+          lim <- if (familyobj$links[[p]] == "identity") {
+            2 * max(abs(nfit$y[idx] - nfit[[p]][idx])) + 1e-8 } else 3
+          gam <- stats::optimize(function(x) { e <- eta; e[[p]][idx] <- eta0[[p]][idx] + x; nll(idx, e) },
+                                 c(-lim, lim))$minimum
+          eta[[p]][ing] <- eta0[[p]][ing] + gam
+        }
+      }
+    }
+    for (p in names(groups)) out[[p]][folds == k] <- eta[[p]][folds == k]
+  }
+
+  par <- familyobj$map2par(out)
+  for (p in names(groups)) nfit[[p]] <- par[[p]]
+  # predicted response exactly as gamlss2::predict(type = "response") computes it
+  nfit$yhat <- if (!is.null(familyobj$mean)) familyobj$mean(par)
+               else if (!is.null(familyobj$quantile)) familyobj$quantile(0.5, par)
+               else par[[1]]
+  nfit
+}
+
+
+# --------------------------------
+# bs='re' grouping variables per distribution parameter, parsed from "Y ~ mu | sigma | nu | tau"
+re_vars_by_param <- function(g.formula, parnames = c("mu", "sigma", "nu", "tau")) {
+  f <- paste(if (is.character(g.formula)) g.formula else deparse(g.formula), collapse = "")
+  parts <- strsplit(sub("^[^~]*~", "", f), "|", fixed = TRUE)[[1]]
+  rx <- "s\\(\\s*([A-Za-z0-9_.]+)\\s*,[^()]*bs\\s*=\\s*['\"]re['\"][^()]*\\)"
+  out <- lapply(seq_along(parnames), function(j) {
+    if (j > length(parts)) return(character(0))
+    m <- regmatches(parts[j], gregexpr(rx, parts[j], perl = TRUE))[[1]]
+    unique(sub(rx, "\\1", m, perl = TRUE))
+  })
+  setNames(out, parnames)
+}
+
+
+# --------------------------------
+# Replace bs='re' terms whose factor has < 2 levels in `data` by 1 (mgcv cannot fit them),
+# e.g. a nested scanner factor that is constant once its whole protocol is held out
+drop_degenerate_re <- function(g.formula, data) {
+  f <- paste(if (is.character(g.formula)) g.formula else deparse(g.formula), collapse = "")
+  for (v in unique(unlist(re_vars_by_param(f)))) {
+    if (length(unique(data[[v]])) < 2) {
+      f <- gsub(paste0("s\\(\\s*", v, "\\s*,[^()]*bs\\s*=\\s*['\"]re['\"][^()]*\\)"), "1", f, perl = TRUE)
+      cat(paste0("\t| dropping s(", v, ", bs='re'): single level in this training set"), fill = TRUE)
+    }
+  }
+  f
+}
+
+
+# --------------------------------
+# Evaluate expr with a fixed seed without disturbing the caller's RNG stream
+with_seed <- function(seed, expr) {
+  old <- if (exists(".Random.seed", envir = globalenv())) get(".Random.seed", envir = globalenv())
+  on.exit(if (is.null(old)) rm(".Random.seed", envir = globalenv()) else assign(".Random.seed", old, envir = globalenv()))
+  set.seed(seed)
+  expr
 }
 
 
@@ -503,7 +608,7 @@ testGD <- function(nfit, familyobj){
 # Summarize fold Global Deviance statistics BRAIN-WIDE
 statGD <- function(GDs, k.penalty=NULL, deg.fre=1, return_all_GD=F) {
   missfits <- sum(is.na(GDs))
-  nsub <- length(GDs[[1]]$resid)
+  nsub <- length(Find(is.list, GDs)$resid) # first scored voxel, voxel 1 may be a missfit
   nvxl <- length(GDs)
 
   TGDs <- numeric(nvxl) * NA

@@ -115,11 +115,12 @@ vbgamlss.stratified_cv <- function(imageframe,
                  chunk_max_mb=chunk_max_mb,
                  debug=debug,
                  cachedir=state.dir,
+                 cache_id=paste0('fold', fold),
                  ...
         ),
         skip=verbose)
       cat("\033[0m")
-      if (save_states){qs2::qs_save(model, fold.model.file)}
+      if (save_states){qs2::qs_save(model, fold.model.file); drop_vbgamlss_cache(model)}
 
       # update and save status on the registry
       registry[1, fold] = TRUE
@@ -154,7 +155,7 @@ vbgamlss.stratified_cv <- function(imageframe,
     cat('\t| Summarizing statistics', fill=T)
     stats <- statGD(GDs,
                     k.penalty,
-                    deg.fre=model[[1]]$df,
+                    deg.fre=first_fitted(model)$df,
                     return_all_GD=return_all_GD)
 
     # update and save status on the registry
@@ -236,7 +237,7 @@ predictGD.strat <- function (object,
   .state.dir = loginfo[2]
 
   ## predict GD ##
-  familyobj <- restore_family(object[[1]])$family
+  familyobj <- restore_family(first_fitted(object))$family
 
   # .predicted.parameters
   fold.P.file = file.path(.state.dir, paste0('.fold.', .fold, '.predicted.parameters.qs'))
@@ -355,9 +356,13 @@ vbgamlss.nested_cv <- function(imageframe,
                                save_states = T,
                                resume = T,
                                drop_re = T, # drop random/batch effects when predicting the held-out outer batch
+                               calib_k = 0, # >1: calibrate held-out batch REs by conditional MLE, cross-fitted over calib_k splits
+                               calib_seed = 1, # calibration splits are identical across candidate formulas
                                ...) {
 
   cat(paste0("Starting nested cross validation (outer LOBO x inner ", k_inner, "-fold CV)"), fill=T)
+  if (calib_k > 1 && !drop_re) { stop("calib_k needs drop_re = TRUE (calibration starts from population-level predictions)") }
+  calib_re <- re_vars_by_param(g.formula)
 
   if (missing(imageframe)) { stop("imageframe is missing") }
   if (missing(fold.var)) { stop("vector of length N subjects with integers indicating the outer (batch) fold is missing") }
@@ -417,6 +422,11 @@ vbgamlss.nested_cv <- function(imageframe,
     train_fold_data <- droplevels(train_fold_data)
     test_indices <- which(train.data$outerfolds == fold)
     test_fold_data <- train.data[test_indices, ]
+    g.formula.fold <- drop_degenerate_re(g.formula, train_fold_data)
+    calib_folds <- NULL
+    if (calib_k > 1) {
+      calib_folds <- with_seed(calib_seed + fold, sample(rep_len(seq_len(calib_k), length(test_indices))))
+    }
 
     # ---- Outer model fit (trained on all-but-one batch) ----
     outer.model.file <- file.path(outer.dir, '.outer.model.qs')
@@ -428,7 +438,7 @@ vbgamlss.nested_cv <- function(imageframe,
       cat("\033[34m")
       outer.model <- quite(
         vbgamlss(imageframe = imageframe[training_fold, ],
-                 g.formula = g.formula,
+                 g.formula = g.formula.fold,
                  train.data = train_fold_data,
                  g.family = g.family,
                  segmentation = segmentation,
@@ -438,11 +448,12 @@ vbgamlss.nested_cv <- function(imageframe,
                  chunk_max_mb = chunk_max_mb,
                  debug = debug,
                  cachedir = state.dir,
+                 cache_id = paste0('outer', fold),
                  ...
         ),
         skip = verbose)
       cat("\033[0m")
-      if (save_states) { qs2::qs_save(outer.model, outer.model.file) }
+      if (save_states) { qs2::qs_save(outer.model, outer.model.file); drop_vbgamlss_cache(outer.model) }
       registry[1, fold] <- TRUE
       if (save_states) { qs2::qs_save(registry, reg.file) }
     }
@@ -463,6 +474,8 @@ vbgamlss.nested_cv <- function(imageframe,
                              resume              = resume,
                              save_states         = save_states,
                              drop_re             = drop_re,
+                             calib_folds         = calib_folds,
+                             calib_re            = calib_re,
                              loginfo             = c('outer', outer.dir))
       if (save_states) { qs2::qs_save(outer.GDs, outer.gd.file) }
       registry[2, fold] <- TRUE
@@ -472,7 +485,7 @@ vbgamlss.nested_cv <- function(imageframe,
     cat('\t| Summarizing outer (LOBO) statistics', fill=T)
     outer_stats <- statGD(outer.GDs,
                           k.penalty,
-                          deg.fre = outer.model[[1]]$df,
+                          deg.fre = first_fitted(outer.model)$df,
                           return_all_GD = return_all_GD)
     ncvresults$outer[[paste0('outerfold', fold)]] <- outer_stats
     registry[3, fold] <- TRUE
@@ -491,7 +504,7 @@ vbgamlss.nested_cv <- function(imageframe,
 
     cat('\t| Inner CV: running ', k_inner, '-fold stratified CV on outer training set', fill=T)
     inner_results <- vbgamlss.stratified_cv(imageframe          = imageframe[training_fold, ],
-                                            g.formula          = g.formula,
+                                            g.formula          = g.formula.fold,
                                             train.data         = train_fold_data,
                                             fold.var           = inner_fold_var,
                                             g.family           = g.family,
